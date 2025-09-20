@@ -1172,32 +1172,25 @@ with tabs[3]:
     for dm_name, dm_settings in list(st.session_state.device_modes.items()):
         with st.expander(f"Device Mode: {dm_name}", expanded=False):
             
-            # --- 【START：UI 還原為「比例」 + 新增「收合」功能】 ---
             st.markdown("#### Component Settings")
             all_comp_groups = sorted(list(st.session_state.operating_modes.keys()))
             
             for group in all_comp_groups:
                 
-                # 取得此群組所有可選的 Component Modes
                 group_modes = list(st.session_state.operating_modes.get(group, {}).keys())
                 if not group_modes:
                     st.warning(f"'{group}' 尚未在 tabs[1] 中定義任何 Component Mode。")
                     continue
                 
-                # 取得此 Device Mode 目前為此群組設定的「比例字典」
-                # (例如 {"AOD": 100, "NBM": 0 ...})
                 current_ratios = dm_settings.get("components", {}).get(group, {})
                 
-                # --- 【新功能】使用 Expander 收合 ---
-                with st.expander(f"**{group}**"):
+                with st.expander(f"**{group}** - Mode Ratios (%)"):
                 
-                    # 同步 ratios：確保所有模式都在字典中，並移除 tabs[1] 中已刪除的模式
                     for mode in group_modes:
                         if mode not in current_ratios: current_ratios[mode] = 0
                     for mode in list(current_ratios.keys()):
                         if mode not in group_modes: del current_ratios[mode]
                     
-                    # 顯示比例輸入框
                     for mode_name in group_modes:
                         left_column, _ = st.columns([1, 3]) 
                         with left_column:
@@ -1207,7 +1200,7 @@ with tabs[3]:
                             with sub_col2:
                                 current_ratios[mode_name] = st.number_input(
                                     f"Ratio for {mode_name}", min_value=0, max_value=100, 
-                                    value=current_ratios.get(mode_name, 0), # 使用 .get() 避免錯誤
+                                    value=current_ratios.get(mode_name, 0),
                                     step=1, key=f"dm_ratio_{dm_name}_{group}_{mode_name}", label_visibility="collapsed"
                                 )
                             with sub_col3:
@@ -1217,9 +1210,7 @@ with tabs[3]:
                     if total_ratio != 100:
                         st.error(f"'{group}' 的百分比總和必須為 100。目前總和: {total_ratio}%")
                     
-                    # 將「比例字典」存回
                     dm_settings["components"][group] = current_ratios
-            # --- 【END：UI 修改】 ---
 
             st.markdown("---")
             st.markdown("#### Power Source Settings")
@@ -1234,6 +1225,34 @@ with tabs[3]:
                 )
                 dm_settings["power_sources"][ps_node['id']] = selected_ps_mode
             
+            
+            # --- 【START：新增的「CLONE」功能】 ---
+            st.markdown("---") 
+            
+            if st.button(f"Clone this Device Mode", key=f"clone_dm_{dm_name}", type="secondary"):
+                # 1. 找到一個新的唯一名稱
+                new_dm_name = f"{dm_name} (Copy)"
+                counter = 2
+                while new_dm_name in st.session_state.device_modes:
+                    new_dm_name = f"{dm_name} (Copy {counter})"
+                    counter += 1
+                
+                # 2. 深拷貝設定
+                new_dm_settings = copy.deepcopy(dm_settings)
+                
+                # 3. 新增到 device_modes 字典
+                st.session_state.device_modes[new_dm_name] = new_dm_settings
+                
+                # 4. 將這個新模式新增到「所有」User Profiles 中 (預設為 0 小時)
+                for profile in st.session_state.user_profiles.values():
+                    profile[new_dm_name] = 0
+                
+                st.success(f"已成功複製 '{dm_name}' 為 '{new_dm_name}'。")
+                st.rerun()
+            # --- 【END：新增的「CLONE」功能】 ---
+
+
+            # (刪除功能的 expander 保持不變)
             if num_device_modes > 1:
                 with st.expander(f"🗑️ 刪除設備模式 '{dm_name}'"):
                     st.warning(f"此操作將永久刪除 '{dm_name}' 設備模式，無法復原。")
@@ -1251,6 +1270,7 @@ with tabs[3]:
                                 del profile[mode_to_delete]
                         st.rerun()
 
+    # (新增 Device Mode 的 expander 保持不變)
     with st.expander("➕ Add New Device Mode", expanded=False):
         new_dm_name = st.text_input("New Device Mode Name", key="new_dm_name")
         if st.button("Add Device Mode", key="add_dm_btn", type="secondary"):
@@ -1258,7 +1278,6 @@ with tabs[3]:
                 all_comp_groups = set(n['group'] for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component')
                 all_ps_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
                 
-                # 【已還原】新 Device Mode 的預設值為 100% "Default"
                 st.session_state.device_modes[new_dm_name] = {
                     "components": {group: {"Default": 100} for group in all_comp_groups},
                     "power_sources": {ps['id']: "On" for ps in all_ps_nodes}
