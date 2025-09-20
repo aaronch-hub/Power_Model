@@ -751,7 +751,7 @@ with tabs[1]:
                 with st.expander(f"{mode_name}", expanded=False):
                     for node in group_nodes:
                         
-                        # --- 【START：邏輯簡化 - 只處理電流】 ---
+                        # --- 【邏輯已簡化 - 只處理電流】 ---
                         source_id = node.get('input_source_id')
                         source_label = "N/A"
                         if source_id:
@@ -768,7 +768,7 @@ with tabs[1]:
                             current_val_for_widget = float(mode_data.get('currents_mA', {}).get(node['id'], 0.0))
                         
                         # 2. 建立標籤 (只顯示電源名稱)
-                        new_label_text = f"Current (mA) - {node['endpoint']} {source_label}"
+                        new_label_text = f"Current (mA) - {node['endpoint']} ({source_label})"
                         
                         st.number_input(
                             new_label_text,
@@ -780,7 +780,7 @@ with tabs[1]:
                         
                         # 3. 將「電流 (mA)」存回 session_state
                         mode_data['currents_mA'][node['id']] = st.session_state[widget_key]
-                        # --- 【END：修正結束】 ---
+                        # --- 【修正結束】 ---
 
                     st.markdown("---")
                     mode_data['note'] = st.text_area("Mode Note", value=mode_data.get("note", ""), key=f"note_{selected_group}_{mode_name}")
@@ -831,7 +831,8 @@ with tabs[1]:
     st.markdown("---")
     st.subheader("Component & Group Settings")
 
-with st.expander("➕ Add New Component"):
+    # --- 【START：已修正 APIException 的「新增元件」區塊】 ---
+    with st.expander("➕ Add New Component"):
         new_group = st.text_input("元件群組名稱", "New Group", key="new_comp_group")
         new_endpoint = st.text_input("電源端點名稱", "New Endpoint", key="new_comp_endpoint")
         power_sources_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
@@ -839,33 +840,25 @@ with st.expander("➕ Add New Component"):
         selected_ps_id = st.selectbox("連接到哪個電源？", options=power_source_options.keys(), format_func=lambda x: power_source_options.get(x, "N/A"), key="new_comp_source")
         
         widget_key_new = "new_comp_current_input"
-
-        # --- 【START：已修正】 ---
-        # 刪除了 'if widget_key_new not in ...' 的錯誤邏輯
+        
+        # 修正點 1: 移除 'if key not in session_state'
         
         source_label_new = power_source_options.get(selected_ps_id, 'N/A')
         
-        # 直接在 value 參數中設定預設值 1.0
+        # 修正點 2: 在 'value=' 中設定預設值 1.0
         st.number_input(
             f"'Default' 模式電流 (mA) ({source_label_new})", 
             min_value=0.0, 
-            value=1.0, # <-- 在這裡設定預設值
+            value=1.0, # <-- 在此處設定預設值
             key=widget_key_new,
             format="%.3f"
         )
-        # --- 【END：修正】 ---
         
-        new_current = st.session_state[widget_key_new] 
-        
-        # (計算 power 的邏輯移到 button 內部，確保 source_voltage 是最新的)
+        # 修正點 3: 總是在 button 按下時才讀取 key 的值
         if st.button("確認新增元件"):
             
-            # 在按鈕點擊時才計算 power
-            source_voltage = 1.0 
-            if selected_ps_id and selected_ps_id in st.session_state.power_source_modes:
-                source_voltage = st.session_state.power_source_modes[selected_ps_id].get("On", {}).get("output_voltage", 1.0)
-                if source_voltage == 0: source_voltage = 1.0
-            new_power = new_current * source_voltage # (這行其實已不再需要，因為我們存的是電流)
+            # 從 session_state 讀取「現在」的值
+            new_current = st.session_state[widget_key_new]
 
             new_id = f"node_{st.session_state.max_id + 1}"
             new_node_data = {"id": new_id, "type": "component"}
@@ -885,13 +878,14 @@ with st.expander("➕ Add New Component"):
                 if new_group not in dm["components"]:
                     dm["components"][new_group] = "Default"
             
-            # 重設 new_current_input 的值為 1.0
+            # 修正點 4: 重設輸入框的值
             st.session_state[widget_key_new] = 1.0
 
             st.session_state.power_tree_data['nodes'].append(new_node_data)
             st.session_state.max_id += 1
             st.success(f"已新增元件: {new_group} - {new_endpoint}")
             st.rerun()
+    # --- 【END：修正】 ---
 
     with st.expander("✏️ Edit / Delete Component"):
         nodes_list = st.session_state.power_tree_data['nodes']
@@ -927,7 +921,6 @@ with st.expander("➕ Add New Component"):
                 
                 widget_key_edit = f"edit_current_{selected_node_id}"
                 
-                # 【已修改】讀取 'Default' 模式的「電流」
                 if widget_key_edit in st.session_state:
                     current_val_for_widget = st.session_state[widget_key_edit]
                 else:
@@ -946,7 +939,6 @@ with st.expander("➕ Add New Component"):
                 if st.button("更新元件", key=f"update_comp_{selected_node_id}"):
                     node_to_edit['endpoint'] = edited_endpoint
                     node_to_edit['input_source_id'] = selected_ps_id_edit
-                    # 【已修改】儲存「電流」
                     st.session_state.operating_modes[original_group]["Default"]["currents_mA"][selected_node_id] = edited_default_current 
 
                     if original_group != edited_group:
@@ -954,7 +946,6 @@ with st.expander("➕ Add New Component"):
                             st.session_state.operating_modes[edited_group] = {"Default": {"currents_mA": {}, "note": "Default operating mode."}}
                             st.session_state.group_colors[edited_group] = next(DEFAULT_COLORS)
                         
-                        #【已修改】移動「電流」
                         current_val = st.session_state.operating_modes[original_group]["Default"]["currents_mA"].pop(selected_node_id)
                         st.session_state.operating_modes[edited_group]["Default"]["currents_mA"][selected_node_id] = current_val
                         
