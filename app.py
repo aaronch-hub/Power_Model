@@ -619,7 +619,6 @@ with tabs[0]:
         st.session_state.active_device_mode = selected_device_mode
         st.rerun()
     
-    # 這兩個 placeholder 會被檔案末端的程式碼填入
     power_placeholder = st.empty()
     current_placeholder = st.empty()
     
@@ -654,13 +653,20 @@ with tabs[0]:
         else:
             df_chart = df_main
 
+        # --- 【START：修正圓餅圖文字顏色】 ---
+        
+        # 根據主題決定文字顏色
+        if st.session_state.theme == "Dark":
+            pie_text_color = "white"
+        else:
+            pie_text_color = "black"
+
         base = alt.Chart(df_chart).encode(
            theta=alt.Theta("power_mW:Q", stack=True)
         ).properties(
            title="Breakdown of Total Vsys Power Draw"
         )
 
-        # --- 【已修改】 放大圓餅圖 ---
         pie = base.mark_arc(outerRadius=160, innerRadius=0).encode(
             color=alt.Color("source:N", title="Power Source"),
             order=alt.Order("percentage:Q", sort="descending"),
@@ -669,12 +675,13 @@ with tabs[0]:
                      alt.Tooltip("percentage:Q", format=".1%")]
         )
 
+        # 百分比文字
         text = base.mark_text(radius=180).encode(
             text=alt.Text("percentage:Q", format=".1%"),
             order=alt.Order("percentage:Q", sort="descending"),
-            color=alt.value("black")
+            color=alt.value(pie_text_color)  # <-- 【已修改】 使用動態顏色
         )
-        # --- 【修改結束】 ---
+        # --- 【END：修正】 ---
 
         chart = pie + text
         
@@ -1313,13 +1320,13 @@ with tabs[4]:
 # ---
 total_power = calculate_power(st.session_state.active_device_mode)
 
-# --- 【已修改】 移除 "Input" 並保持粗體 ---
-power_placeholder.write(f"**Total System Power:** {total_power:.2f} mW")
+# --- 【已修改】 改用 HTML <strong> 標籤強制粗體 ---
+power_placeholder.write(f"<strong>Total System Power:</strong> {total_power:.2f} mW", unsafe_allow_html=True)
 vsys_node = get_node_by_id("battery")
 if vsys_node and vsys_node.get('output_voltage', 0) > 0:
     current = total_power / vsys_node['output_voltage']
-    # --- 【已修改】 移除 "Input" 並保持粗體 ---
-    current_placeholder.write(f"**Total Vsys Current:** {current:.2f} mA")
+    # --- 【已修改】 改用 HTML <strong> 標籤強制粗體 ---
+    current_placeholder.write(f"<strong>Total Vsys Current:</strong> {current:.2f} mA", unsafe_allow_html=True)
 
 # 繪製 Power Tree (此區塊保持不變)
 if st.session_state.theme == "Dark":
