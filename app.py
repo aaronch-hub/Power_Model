@@ -977,8 +977,12 @@ with tabs[2]:
                 key_note = f"psm_note_{selected_ps_id}_{mode_name}"
 
                 if is_off_mode := params.get('output_voltage') == 0 and params.get('efficiency') == 0:
-                    st.text_input("Output Voltage (V)", value="0.0 (Off)", disabled=True)
-                    st.text_input("Efficiency (%)", value="N/A", disabled=True)
+                    
+                    # --- 【START：修正點】 ---
+                    # 為這兩個 disabled text_input 加上唯一的 key
+                    st.text_input("Output Voltage (V)", value="0.0 (Off)", disabled=True, key=key_v)
+                    st.text_input("Efficiency (%)", value="N/A", disabled=True, key=key_eff)
+                    # --- 【END：修正點】 ---
                     
                     if key_iq not in st.session_state:
                         st.session_state[key_iq] = params['quiescent_current_mA']
@@ -1055,11 +1059,9 @@ with tabs[2]:
                 else:
                     st.error(f"模式名稱 '{new_ps_mode_name}' 已存在。")
 
-    # --- 【以下為從 Sidebar 移入的新功能】 ---
     st.markdown("---")
     st.subheader("Power Source Settings")
 
-    # --- 【新增電源】 ---
     with st.expander("➕ Add New Power Source"):
         new_label = st.text_input("新電源名稱", "New Power Source", key="new_ps_label")
         ps_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
@@ -1091,7 +1093,6 @@ with tabs[2]:
             st.success(f"已新增電源: {new_label}")
             st.rerun()
 
-    # --- 【編輯/刪除電源】 ---
     with st.expander("✏️ Edit / Delete Power Source"):
         nodes_list = st.session_state.power_tree_data['nodes']
         def format_node_for_display_ps(node_id):
