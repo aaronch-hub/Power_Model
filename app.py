@@ -222,9 +222,11 @@ def initialize_data():
 
     st.session_state.component_group_notes = {group: "" for group in all_comp_groups}
 
-    # --- 4. 建立 Device Modes (已更新為「非比例」) ---
+
+    # --- 4. 建立 Device Modes ---
+    
     default_comp_settings_base = {
-        group: "Default" 
+        group: {"Default": 100} # 使用字典 {模式: 比例}
         for group in all_comp_groups if group != "Display Module"
     }
     default_ps_settings = {ps['id']: "On" for ps in power_source_nodes}
@@ -233,25 +235,29 @@ def initialize_data():
         "components": copy.deepcopy(default_comp_settings_base),
         "power_sources": copy.deepcopy(default_ps_settings)
     }
-    dm_idle_day["components"]["Display Module"] = "Idle mode"
+    # 【已還原】使用 {"Idle mode": 100}
+    dm_idle_day["components"]["Display Module"] = {"AOD mode": 0, "NBM (no finger)": 0, "NBM (1 finger)": 0, "Idle mode": 100}
 
     dm_idle_night = {
         "components": copy.deepcopy(default_comp_settings_base),
         "power_sources": copy.deepcopy(default_ps_settings)
     }
-    dm_idle_night["components"]["Display Module"] = "Idle mode"
+    # 【已還原】使用 {"Idle mode": 100}
+    dm_idle_night["components"]["Display Module"] = {"AOD mode": 0, "NBM (no finger)": 0, "NBM (1 finger)": 0, "Idle mode": 100}
 
     dm_exercise = {
         "components": copy.deepcopy(default_comp_settings_base),
         "power_sources": copy.deepcopy(default_ps_settings)
     }
-    dm_exercise["components"]["Display Module"] = "NBM (1 finger)"
+    # 【已還原】使用 {"NBM (1 finger)": 100}
+    dm_exercise["components"]["Display Module"] = {"AOD mode": 0, "NBM (no finger)": 0, "NBM (1 finger)": 100, "Idle mode": 0}
 
     dm_aod = {
         "components": copy.deepcopy(default_comp_settings_base),
         "power_sources": copy.deepcopy(default_ps_settings)
     }
-    dm_aod["components"]["Display Module"] = "AOD mode"
+    # 【已還原】使用 {"AOD mode": 100}
+    dm_aod["components"]["Display Module"] = {"AOD mode": 100, "NBM (no finger)": 0, "NBM (1 finger)": 0, "Idle mode": 0}
     
     st.session_state.device_modes = {
         "Exercise Mode": dm_exercise,
@@ -260,7 +266,7 @@ def initialize_data():
         "AOD Mode": dm_aod
     }
     
-    st.session_state.active_device_mode = "Exercise Mode"
+    st.session_state.active_device_mode = "Exercise Mode" # 保持不變
     
     # --- 5. User Profiles (保持不變) ---
     st.session_state.battery_capacity_mAh = 64.5
@@ -303,7 +309,7 @@ def apply_device_mode(mode_name_override=None):
 
     active_dm = st.session_state.device_modes[active_dm_name]
     
-    # --- 【步驟 1：設定所有電源的電壓】 ---
+    # --- 步驟 1：設定所有電源的電壓 (保持不變) ---
     ps_settings = active_dm.get("power_sources", {})
     for node in st.session_state.power_tree_data['nodes']:
         if node['type'] == 'power_source':
@@ -316,35 +322,43 @@ def apply_device_mode(mode_name_override=None):
             node['efficiency'] = mode_params['efficiency']
             node['quiescent_current_mA'] = mode_params['quiescent_current_mA']
 
-    # --- 【步驟 2：計算所有元件的功率】 ---
+    # --- 【START：還原為「比例」計算邏輯】 ---
+    # comp_settings 現在是 dict[group_name, dict[mode_name, ratio]]
     comp_settings = active_dm.get("components", {}) 
     for node in st.session_state.power_tree_data['nodes']:
         if node['type'] == 'component':
             group = node['group']
             
-            # 1. 取得這個群組被選定的「單一模式」名稱 (例如 "Test Mode")
-            selected_mode_name = comp_settings.get(group)
+            # 1. 取得這個群組的「模式比例」字典 (例如 {"AOD": 10, "NBM": 90})
+            group_ratios = comp_settings.get(group)
             
-            if selected_mode_name:
-                # 2. 取得該模式下，這個 node 應有的「電流 (mA)」
-                current_mA = st.session_state.operating_modes.get(group, {}).get(
-                    selected_mode_name, {}
-                ).get('currents_mA', {}).get(node['id'], 0.0) # <-- 讀取 currents_mA
-                
-                # 3. 取得此 node 的電源
+            if group_ratios:
+                # 2. 取得此 node 的電源和其「當前」電壓
                 source_node = get_node_by_id(node.get('input_source_id'))
-                
-                # 4. 取得該電源「當前」的電壓 (已在步驟 1 中設定)
                 current_voltage = 0.0
                 if source_node:
-                    current_voltage = source_node.get('output_voltage', 0.0) # <-- 讀取 node 的即時電壓
+                    current_voltage = source_node.get('output_voltage', 0.0)
+
+                weighted_power = 0.0
                 
-                # 5. 計算 P = V * I
-                power_mW = current_voltage * current_mA
+                # 3. 遍歷所有模式和比例
+                for mode_name, ratio in group_ratios.items():
+                    if ratio > 0:
+                        # 4. 取得該模式下的「電流 (mA)」
+                        current_mA = st.session_state.operating_modes.get(group, {}).get(
+                            mode_name, {}
+                        ).get('currents_mA', {}).get(node['id'], 0.0)
+                        
+                        # 5. 用「當前電壓」計算此模式的功率
+                        power_for_mode = current_voltage * current_mA
+                        
+                        # 6. 計算加權功率
+                        weighted_power += power_for_mode * (ratio / 100.0)
                 
-                node['power_consumption'] = power_mW
+                node['power_consumption'] = weighted_power
             else:
                 node['power_consumption'] = 0.0
+    # --- 【END：還原結束】 ---
 
 def calculate_power(mode_name_override=None):
     apply_device_mode(mode_name_override)
@@ -1158,36 +1172,54 @@ with tabs[3]:
     for dm_name, dm_settings in list(st.session_state.device_modes.items()):
         with st.expander(f"Device Mode: {dm_name}", expanded=False):
             
+            # --- 【START：UI 還原為「比例」 + 新增「收合」功能】 ---
             st.markdown("#### Component Settings")
             all_comp_groups = sorted(list(st.session_state.operating_modes.keys()))
             
             for group in all_comp_groups:
-                st.markdown(f"**{group}**")
                 
-                # --- 【已移除】 (Depends on: ...) 提示訊息 ---
-
+                # 取得此群組所有可選的 Component Modes
                 group_modes = list(st.session_state.operating_modes.get(group, {}).keys())
-                
                 if not group_modes:
                     st.warning(f"'{group}' 尚未在 tabs[1] 中定義任何 Component Mode。")
                     continue
-
-                current_selected_mode = dm_settings.get("components", {}).get(group)
-
-                try:
-                    current_index = group_modes.index(current_selected_mode)
-                except ValueError:
-                    current_index = 0
                 
-                selected_mode = st.selectbox(
-                    f"Select Component Mode for '{group}'",
-                    options=group_modes,
-                    index=current_index,
-                    key=f"dm_comp_select_{dm_name}_{group}",
-                    label_visibility="collapsed"
-                )
+                # 取得此 Device Mode 目前為此群組設定的「比例字典」
+                # (例如 {"AOD": 100, "NBM": 0 ...})
+                current_ratios = dm_settings.get("components", {}).get(group, {})
                 
-                dm_settings["components"][group] = selected_mode
+                # --- 【新功能】使用 Expander 收合 ---
+                with st.expander(f"**{group}** - Mode Ratios (%)"):
+                
+                    # 同步 ratios：確保所有模式都在字典中，並移除 tabs[1] 中已刪除的模式
+                    for mode in group_modes:
+                        if mode not in current_ratios: current_ratios[mode] = 0
+                    for mode in list(current_ratios.keys()):
+                        if mode not in group_modes: del current_ratios[mode]
+                    
+                    # 顯示比例輸入框
+                    for mode_name in group_modes:
+                        left_column, _ = st.columns([1, 3]) 
+                        with left_column:
+                            sub_col1, sub_col2, sub_col3 = st.columns([2, 1, 1])
+                            with sub_col1:
+                                st.markdown(f"<p style='padding-top: 8px; padding-left: 20px;'>{mode_name}</p>", unsafe_allow_html=True)
+                            with sub_col2:
+                                current_ratios[mode_name] = st.number_input(
+                                    f"Ratio for {mode_name}", min_value=0, max_value=100, 
+                                    value=current_ratios.get(mode_name, 0), # 使用 .get() 避免錯誤
+                                    step=1, key=f"dm_ratio_{dm_name}_{group}_{mode_name}", label_visibility="collapsed"
+                                )
+                            with sub_col3:
+                                st.markdown("<p style='padding-top: 8px;'>%</p>", unsafe_allow_html=True)
+                    
+                    total_ratio = sum(current_ratios.values())
+                    if total_ratio != 100:
+                        st.error(f"'{group}' 的百分比總和必須為 100。目前總和: {total_ratio}%")
+                    
+                    # 將「比例字典」存回
+                    dm_settings["components"][group] = current_ratios
+            # --- 【END：UI 修改】 ---
 
             st.markdown("---")
             st.markdown("#### Power Source Settings")
@@ -1226,8 +1258,9 @@ with tabs[3]:
                 all_comp_groups = set(n['group'] for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component')
                 all_ps_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
                 
+                # 【已還原】新 Device Mode 的預設值為 100% "Default"
                 st.session_state.device_modes[new_dm_name] = {
-                    "components": {group: list(st.session_state.operating_modes.get(group, {}).keys())[0] for group in all_comp_groups if st.session_state.operating_modes.get(group)},
+                    "components": {group: {"Default": 100} for group in all_comp_groups},
                     "power_sources": {ps['id']: "On" for ps in all_ps_nodes}
                 }
                 for profile in st.session_state.user_profiles.values():
