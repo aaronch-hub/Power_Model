@@ -831,7 +831,7 @@ with tabs[1]:
     st.markdown("---")
     st.subheader("Component & Group Settings")
 
-    with st.expander("➕ Add New Component"):
+with st.expander("➕ Add New Component"):
         new_group = st.text_input("元件群組名稱", "New Group", key="new_comp_group")
         new_endpoint = st.text_input("電源端點名稱", "New Endpoint", key="new_comp_endpoint")
         power_sources_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
@@ -839,22 +839,36 @@ with tabs[1]:
         selected_ps_id = st.selectbox("連接到哪個電源？", options=power_source_options.keys(), format_func=lambda x: power_source_options.get(x, "N/A"), key="new_comp_source")
         
         widget_key_new = "new_comp_current_input"
-        if widget_key_new not in st.session_state:
-            st.session_state[widget_key_new] = 1.0
 
+        # --- 【START：已修正】 ---
+        # 刪除了 'if widget_key_new not in ...' 的錯誤邏輯
+        
         source_label_new = power_source_options.get(selected_ps_id, 'N/A')
+        
+        # 直接在 value 參數中設定預設值 1.0
         st.number_input(
             f"'Default' 模式電流 (mA) ({source_label_new})", 
             min_value=0.0, 
+            value=1.0, # <-- 在這裡設定預設值
             key=widget_key_new,
             format="%.3f"
         )
-        new_current = st.session_state[widget_key_new] # 讀取電流
-
+        # --- 【END：修正】 ---
+        
+        new_current = st.session_state[widget_key_new] 
+        
+        # (計算 power 的邏輯移到 button 內部，確保 source_voltage 是最新的)
         if st.button("確認新增元件"):
+            
+            # 在按鈕點擊時才計算 power
+            source_voltage = 1.0 
+            if selected_ps_id and selected_ps_id in st.session_state.power_source_modes:
+                source_voltage = st.session_state.power_source_modes[selected_ps_id].get("On", {}).get("output_voltage", 1.0)
+                if source_voltage == 0: source_voltage = 1.0
+            new_power = new_current * source_voltage # (這行其實已不再需要，因為我們存的是電流)
+
             new_id = f"node_{st.session_state.max_id + 1}"
             new_node_data = {"id": new_id, "type": "component"}
-            # 【已修改】power_consumption 欄位不再重要，設為 0
             new_node_data.update({"group": new_group, "endpoint": new_endpoint, "power_consumption": 0.0, "input_source_id": selected_ps_id})
             
             if new_group not in st.session_state.operating_modes:
@@ -863,7 +877,6 @@ with tabs[1]:
                      st.session_state.component_group_notes = {}
                 st.session_state.component_group_notes[new_group] = ""
 
-            # 【已修改】儲存「電流」到 currents_mA
             st.session_state.operating_modes[new_group]["Default"]["currents_mA"][new_id] = new_current
             
             if new_group not in st.session_state.group_colors:
@@ -872,8 +885,8 @@ with tabs[1]:
                 if new_group not in dm["components"]:
                     dm["components"][new_group] = "Default"
             
-            if widget_key_new in st.session_state:
-                st.session_state[widget_key_new] = 1.0
+            # 重設 new_current_input 的值為 1.0
+            st.session_state[widget_key_new] = 1.0
 
             st.session_state.power_tree_data['nodes'].append(new_node_data)
             st.session_state.max_id += 1
@@ -992,46 +1005,46 @@ with tabs[2]:
             
             with st.expander(f"{mode_name}", expanded=False):
                 
+                # --- 【START：已修正的狀態管理邏輯】 ---
                 key_v = f"psm_v_{selected_ps_id}_{mode_name}"
                 key_eff = f"psm_eff_{selected_ps_id}_{mode_name}"
                 key_iq = f"psm_iq_{selected_ps_id}_{mode_name}"
                 key_note = f"psm_note_{selected_ps_id}_{mode_name}"
 
                 if is_off_mode := params.get('output_voltage') == 0 and params.get('efficiency') == 0:
-                    
-                    # --- 【START：修正點】 ---
-                    # 為這兩個 disabled text_input 加上唯一的 key
                     st.text_input("Output Voltage (V)", value="0.0 (Off)", disabled=True, key=key_v)
                     st.text_input("Efficiency (%)", value="N/A", disabled=True, key=key_eff)
-                    # --- 【END：修正點】 ---
                     
-                    if key_iq not in st.session_state:
-                        st.session_state[key_iq] = params['quiescent_current_mA']
-                    st.number_input("Quiescent Current (mA)", min_value=0.0, key=key_iq, format="%.3f")
+                    # 1. Iq (可編輯)
+                    current_iq = params['quiescent_current_mA']
+                    st.number_input("Quiescent Current (mA)", min_value=0.0, value=current_iq, key=key_iq, format="%.3f")
                     params['quiescent_current_mA'] = st.session_state[key_iq]
 
                 else:
-                    if key_v not in st.session_state:
-                        st.session_state[key_v] = params['output_voltage']
-                    st.number_input("Output Voltage (V)", key=key_v) 
+                    # 1. 電壓
+                    current_v = params['output_voltage']
+                    st.number_input("Output Voltage (V)", value=current_v, key=key_v) 
                     
-                    if key_eff not in st.session_state:
-                        st.session_state[key_eff] = params['efficiency'] * 100.0
-                    st.number_input("Efficiency (%)", min_value=0.0, max_value=100.0, key=key_eff)
+                    # 2. 效率
+                    current_eff = params['efficiency'] * 100.0
+                    st.number_input("Efficiency (%)", min_value=0.0, max_value=100.0, value=current_eff, key=key_eff)
 
-                    if key_iq not in st.session_state:
-                        st.session_state[key_iq] = params['quiescent_current_mA']
-                    st.number_input("Quiescent Current (mA)", min_value=0.0, key=key_iq, format="%.3f")
+                    # 3. Iq
+                    current_iq = params['quiescent_current_mA']
+                    st.number_input("Quiescent Current (mA)", min_value=0.0, value=current_iq, key=key_iq, format="%.3f")
 
+                    # 立即從 session_state 讀取最終值並儲存回 params
                     params['output_voltage'] = st.session_state[key_v]
                     params['efficiency'] = st.session_state[key_eff] / 100.0
                     params['quiescent_current_mA'] = st.session_state[key_iq]
                 
-                if key_note not in st.session_state:
-                    st.session_state[key_note] = params.get("note", "")
-                st.text_area("Mode Note", key=key_note)
+                # 4. Note
+                current_note_val = params.get("note", "")
+                st.text_area("Mode Note", value=current_note_val, key=key_note)
                 params['note'] = st.session_state[key_note]
                 
+                # --- 【END：修正結束】 ---
+
                 st.markdown("---")
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1044,7 +1057,7 @@ with tabs[2]:
                                 if dm.get("power_sources", {}).get(selected_ps_id) == mode_name:
                                     dm["power_sources"][selected_ps_id] = new_name
                             
-                            old_keys = [f"psm_v_{selected_ps_id}_{mode_name}", f"psm_eff_{selected_ps_id}_{mode_name}", f"psm_iq_{selected_ps_id}_{mode_name}", f"psm_note_{selected_ps_id}_{mode_name}"]
+                            old_keys = [key_v, key_eff, key_iq, key_note]
                             for k in old_keys:
                                 if k in st.session_state: del st.session_state[k]
                             st.rerun()
@@ -1059,7 +1072,7 @@ with tabs[2]:
                                     dm["power_sources"][selected_ps_id] = fallback_mode
                             del st.session_state.power_source_modes[selected_ps_id][mode_name]
                             
-                            old_keys = [f"psm_v_{selected_ps_id}_{mode_name}", f"psm_eff_{selected_ps_id}_{mode_name}", f"psm_iq_{selected_ps_id}_{mode_name}", f"psm_note_{selected_ps_id}_{mode_name}"]
+                            old_keys = [key_v, key_eff, key_iq, key_note]
                             for k in old_keys:
                                 if k in st.session_state: del st.session_state[k]
                             st.rerun()
