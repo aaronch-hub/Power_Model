@@ -1170,22 +1170,19 @@ with tabs[3]:
     st.subheader("Edit Device Modes")
     num_device_modes = len(st.session_state.device_modes)
     for dm_name, dm_settings in list(st.session_state.device_modes.items()):
-        with st.expander(f"Device Mode: {dm_name}", expanded=False):
+        with st.expander(f"{dm_name}", expanded=False):
             
+            # (Component Settings ... 保持不變)
             st.markdown("#### Component Settings")
             all_comp_groups = sorted(list(st.session_state.operating_modes.keys()))
-            
             for group in all_comp_groups:
-                
                 group_modes = list(st.session_state.operating_modes.get(group, {}).keys())
                 if not group_modes:
                     st.warning(f"'{group}' 尚未在 tabs[1] 中定義任何 Component Mode。")
                     continue
-                
                 current_ratios = dm_settings.get("components", {}).get(group, {})
                 
-                with st.expander(f"**{group}** - Mode Ratios (%)"):
-                
+                with st.expander(f"**{group}**"):
                     for mode in group_modes:
                         if mode not in current_ratios: current_ratios[mode] = 0
                     for mode in list(current_ratios.keys()):
@@ -1212,6 +1209,7 @@ with tabs[3]:
                     
                     dm_settings["components"][group] = current_ratios
 
+            # (Power Source Settings ... 保持不變)
             st.markdown("---")
             st.markdown("#### Power Source Settings")
             all_ps_nodes = sorted([n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source'], key=lambda x: x['label'])
@@ -1226,35 +1224,61 @@ with tabs[3]:
                 dm_settings["power_sources"][ps_node['id']] = selected_ps_mode
             
             
-            # --- 【START：新增的「CLONE」功能】 ---
+            # (Clone Button ... 保持不變)
             st.markdown("---") 
-            
             if st.button(f"Clone this Device Mode", key=f"clone_dm_{dm_name}", type="secondary"):
-                # 1. 找到一個新的唯一名稱
                 new_dm_name = f"{dm_name} (Copy)"
                 counter = 2
                 while new_dm_name in st.session_state.device_modes:
                     new_dm_name = f"{dm_name} (Copy {counter})"
                     counter += 1
-                
-                # 2. 深拷貝設定
                 new_dm_settings = copy.deepcopy(dm_settings)
-                
-                # 3. 新增到 device_modes 字典
                 st.session_state.device_modes[new_dm_name] = new_dm_settings
-                
-                # 4. 將這個新模式新增到「所有」User Profiles 中 (預設為 0 小時)
                 for profile in st.session_state.user_profiles.values():
                     profile[new_dm_name] = 0
-                
-                st.success(f"已成功複製 '{dm_name}' 為 '{new_dm_name}'。")
+                st.success(f"Cloned '{dm_name}' to '{new_dm_name}'.")
                 st.rerun()
-            # --- 【END：新增的「CLONE」功能】 ---
+
+            
+            # --- 【START：新增的「RENAME」功能】 ---
+            st.markdown("---")
+            st.markdown("##### Rename this Device Mode")
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                new_dm_name_input = st.text_input(
+                    "New device mode name", 
+                    value=dm_name, 
+                    key=f"rename_dm_text_{dm_name}",
+                    label_visibility="collapsed"
+                )
+            with col2:
+                if st.button("Rename", key=f"rename_dm_btn_{dm_name}"):
+                    if new_dm_name_input == dm_name:
+                        st.toast("Name is the same.")
+                    elif new_dm_name_input in st.session_state.device_modes:
+                        st.error(f"Error: The name '{new_dm_name_input}' already exists.")
+                    else:
+                        # 1. 重新命名 device_modes 字典中的 key
+                        st.session_state.device_modes[new_dm_name_input] = st.session_state.device_modes.pop(dm_name)
+                        
+                        # 2. 同步更新所有 user_profiles
+                        for profile in st.session_state.user_profiles.values():
+                            if dm_name in profile:
+                                profile[new_dm_name_input] = profile.pop(dm_name)
+                        
+                        # 3. 如果剛好是目前選中的 mode，也要更新
+                        if st.session_state.active_device_mode == dm_name:
+                            st.session_state.active_device_mode = new_dm_name_input
+                        
+                        st.success(f"Renamed '{dm_name}' to '{new_dm_name_input}'.")
+                        st.rerun()
+            # --- 【END：新增的「RENAME」功能】 ---
 
 
-            # (刪除功能的 expander 保持不變)
+            # (Delete Expander ... 保持不變)
             if num_device_modes > 1:
-                with st.expander(f"🗑️ 刪除設備模式 '{dm_name}'"):
+                with st.expander(f"🗑️ Delete '{dm_name}'"):
                     st.warning(f"此操作將永久刪除 '{dm_name}' 設備模式，無法復原。")
                     if st.button(f"確認永久刪除 '{dm_name}'", key=f"del_dm_confirm_{dm_name}", type="primary"):
                         mode_to_delete = dm_name
@@ -1270,7 +1294,7 @@ with tabs[3]:
                                 del profile[mode_to_delete]
                         st.rerun()
 
-    # (新增 Device Mode 的 expander 保持不變)
+    # (Add New Device Mode Expander ... 保持不變)
     with st.expander("➕ Add New Device Mode", expanded=False):
         new_dm_name = st.text_input("New Device Mode Name", key="new_dm_name")
         if st.button("Add Device Mode", key="add_dm_btn", type="secondary"):
