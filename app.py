@@ -1189,7 +1189,7 @@ with tabs[3]:
                 current_ratios = dm_settings.get("components", {}).get(group, {})
                 
                 # --- 【新功能】使用 Expander 收合 ---
-                with st.expander(f"**{group}** - Mode Ratios (%)"):
+                with st.expander(f"**{group}**"):
                 
                     # 同步 ratios：確保所有模式都在字典中，並移除 tabs[1] 中已刪除的模式
                     for mode in group_modes:
