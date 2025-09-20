@@ -21,7 +21,7 @@ import streamlit.components.v1 as components
 # ===============================================================
 
 if 'theme' not in st.session_state:
-    st.session_state.theme = "Light"
+    st.session_state.theme = "Dark"
 
 st.markdown("""
 <style>
