@@ -751,7 +751,6 @@ with tabs[1]:
                 with st.expander(f"{mode_name}", expanded=False):
                     for node in group_nodes:
                         
-                        # --- 【邏輯已簡化 - 只處理電流】 ---
                         source_id = node.get('input_source_id')
                         source_label = "N/A"
                         if source_id:
@@ -761,13 +760,11 @@ with tabs[1]:
                         
                         widget_key = f"current_{selected_group}_{mode_name}_{node['id']}"
 
-                        # 1. 讀取儲存的「電流 (mA)」
                         if widget_key in st.session_state:
                             current_val_for_widget = st.session_state[widget_key]
                         else:
                             current_val_for_widget = float(mode_data.get('currents_mA', {}).get(node['id'], 0.0))
                         
-                        # 2. 建立標籤 (只顯示電源名稱)
                         new_label_text = f"Current (mA) - {node['endpoint']} ({source_label})"
                         
                         st.number_input(
@@ -778,40 +775,56 @@ with tabs[1]:
                             format="%.3f"
                         )
                         
-                        # 3. 將「電流 (mA)」存回 session_state
                         mode_data['currents_mA'][node['id']] = st.session_state[widget_key]
-                        # --- 【修正結束】 ---
 
                     st.markdown("---")
                     mode_data['note'] = st.text_area("Mode Note", value=mode_data.get("note", ""), key=f"note_{selected_group}_{mode_name}")
                     
+                    # --- 【START：已修正的「Rename」邏輯 (適用於比例)】 ---
                     col1, col2 = st.columns(2)
                     with col1:
                         new_name = st.text_input("Rename Mode", value=mode_name, key=f"rename_{selected_group}_{mode_name}", label_visibility="collapsed")
                     with col2:
                         if st.button("Rename", key=f"rename_btn_{selected_group}_{mode_name}"):
                             if new_name and new_name != mode_name and new_name not in st.session_state.operating_modes[selected_group]:
+                                # 1. 在 operating_modes 中重新命名
                                 st.session_state.operating_modes[selected_group][new_name] = st.session_state.operating_modes[selected_group].pop(mode_name)
+                                
+                                # 2. 更新所有 device_modes
                                 for dm in st.session_state.device_modes.values():
-                                    if group in dm["components"] and dm["components"][group] == mode_name:
-                                        dm["components"][group] = new_name
+                                    # 取得該群組的「比例字典」
+                                    group_ratios = dm["components"].get(selected_group) 
+                                    if group_ratios and mode_name in group_ratios:
+                                        # 重新命名比例字典中的 key
+                                        group_ratios[new_name] = group_ratios.pop(mode_name)
                                 st.rerun()
+                    # --- 【END：修正】 ---
 
+                    # --- 【START：已修正的「Delete」邏輯 (適用於比例)】 ---
                     is_default_only_mode = (mode_name == "Default" and num_modes == 1)
                     is_display_module_default = (selected_group == "Display Module" and mode_name in ["AOD mode", "NBM (no finger)", "NBM (1 finger)", "Idle mode"])
+                    
                     if not is_default_only_mode and mode_name != "Default" and not is_display_module_default:
                         with st.expander("🗑️ 刪除此模式"):
                             st.warning(f"此操作將永久刪除 '{mode_name}' 模式，無法復原。")
                             if st.button(f"確認永久刪除 '{mode_name}'", key=f"delete_confirm_{selected_group}_{mode_name}", type="primary"):
                                 fallback_mode = "Default" if "Default" in st.session_state.operating_modes[selected_group] else list(st.session_state.operating_modes[selected_group].keys())[0]
+                                
+                                # 更新所有 device_modes
                                 for dm in st.session_state.device_modes.values():
-                                    if group in dm["components"] and dm["components"][group] == mode_name:
-                                        dm["components"][group] = fallback_mode
+                                    group_ratios = dm["components"].get(selected_group)
+                                    if group_ratios and mode_name in group_ratios:
+                                        # 取得被刪除模式的比例
+                                        deleted_ratio = group_ratios.pop(mode_name)
+                                        # 將該比例加到 fallback 模式上
+                                        group_ratios[fallback_mode] = group_ratios.get(fallback_mode, 0) + deleted_ratio
+
                                 del st.session_state.operating_modes[selected_group][mode_name]
                                 st.rerun()
                     elif (is_display_module_default or mode_name == "Default") and not is_default_only_mode:
                             with st.expander("🗑️ 刪除此模式", expanded=False):
                                 st.info(f"無法刪除基礎模式 ('{mode_name}')。")
+                    # --- 【END：修正】 ---
         
         with st.expander("➕ Add New Mode", expanded=False):
             new_mode_name = st.text_input("New Mode Name", key=f"new_mode_{selected_group}")
@@ -831,62 +844,53 @@ with tabs[1]:
     st.markdown("---")
     st.subheader("Component & Group Settings")
 
-    # --- 【START：已修正 APIException 的「新增元件」區塊】 ---
+    # --- 【"Add New Component" 區塊 (已修正為 st.form)】 ---
     with st.expander("➕ Add New Component"):
-        new_group = st.text_input("元件群組名稱", "New Group", key="new_comp_group")
-        new_endpoint = st.text_input("電源端點名稱", "New Endpoint", key="new_comp_endpoint")
-        power_sources_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
-        power_source_options = {n['id']: n['label'] for n in power_sources_nodes}
-        selected_ps_id = st.selectbox("連接到哪個電源？", options=power_source_options.keys(), format_func=lambda x: power_source_options.get(x, "N/A"), key="new_comp_source")
-        
-        widget_key_new = "new_comp_current_input"
-        
-        # 修正點 1: 移除 'if key not in session_state'
-        
-        source_label_new = power_source_options.get(selected_ps_id, 'N/A')
-        
-        # 修正點 2: 在 'value=' 中設定預設值 1.0
-        st.number_input(
-            f"'Default' 模式電流 (mA) ({source_label_new})", 
-            min_value=0.0, 
-            value=1.0, # <-- 在此處設定預設值
-            key=widget_key_new,
-            format="%.3f"
-        )
-        
-        # 修正點 3: 總是在 button 按下時才讀取 key 的值
-        if st.button("確認新增元件"):
+        with st.form(key="add_comp_form", clear_on_submit=True):
+            new_group = st.text_input("元件群組名稱", "New Group")
+            new_endpoint = st.text_input("電源端點名稱", "New Endpoint")
+            power_sources_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
+            power_source_options = {n['id']: n['label'] for n in power_sources_nodes}
+            selected_ps_id = st.selectbox("連接到哪個電源？", options=power_source_options.keys(), format_func=lambda x: power_source_options.get(x, "N/A"))
             
-            # 從 session_state 讀取「現在」的值
-            new_current = st.session_state[widget_key_new]
-
-            new_id = f"node_{st.session_state.max_id + 1}"
-            new_node_data = {"id": new_id, "type": "component"}
-            new_node_data.update({"group": new_group, "endpoint": new_endpoint, "power_consumption": 0.0, "input_source_id": selected_ps_id})
+            source_label_new = power_source_options.get(selected_ps_id, 'N/A')
             
-            if new_group not in st.session_state.operating_modes:
-                st.session_state.operating_modes[new_group] = {"Default": {"currents_mA": {}, "note": "Default operating mode."}}
-                if 'component_group_notes' not in st.session_state:
-                     st.session_state.component_group_notes = {}
-                st.session_state.component_group_notes[new_group] = ""
+            new_current = st.number_input(
+                f"'Default' 模式電流 (mA) ({source_label_new})", 
+                min_value=0.0, 
+                value=1.0, # 預設值
+                format="%.3f"
+            )
 
-            st.session_state.operating_modes[new_group]["Default"]["currents_mA"][new_id] = new_current
+            submitted = st.form_submit_button("確認新增元件")
             
-            if new_group not in st.session_state.group_colors:
-                st.session_state.group_colors[new_group] = next(DEFAULT_COLORS)
-            for dm in st.session_state.device_modes.values():
-                if new_group not in dm["components"]:
-                    dm["components"][new_group] = "Default"
-            
-            # 修正點 4: 重設輸入框的值
-            st.session_state[widget_key_new] = 1.0
+            if submitted:
+                new_id = f"node_{st.session_state.max_id + 1}"
+                new_node_data = {"id": new_id, "type": "component"}
+                new_node_data.update({"group": new_group, "endpoint": new_endpoint, "power_consumption": 0.0, "input_source_id": selected_ps_id})
+                
+                if new_group not in st.session_state.operating_modes:
+                    st.session_state.operating_modes[new_group] = {"Default": {"currents_mA": {}, "note": "Default operating mode."}}
+                    if 'component_group_notes' not in st.session_state:
+                         st.session_state.component_group_notes = {}
+                    st.session_state.component_group_notes[new_group] = ""
 
-            st.session_state.power_tree_data['nodes'].append(new_node_data)
-            st.session_state.max_id += 1
-            st.success(f"已新增元件: {new_group} - {new_endpoint}")
-            st.rerun()
-    # --- 【END：修正】 ---
+                st.session_state.operating_modes[new_group]["Default"]["currents_mA"][new_id] = new_current
+                
+                if new_group not in st.session_state.group_colors:
+                    st.session_state.group_colors[new_group] = next(DEFAULT_COLORS)
+                
+                for dm in st.session_state.device_modes.values():
+                    if new_group not in dm["components"]:
+                        # 【已修正】確保儲存為「比例字典」
+                        dm["components"][new_group] = {"Default": 100}
+                
+                st.session_state.power_tree_data['nodes'].append(new_node_data)
+                st.session_state.max_id += 1
+                st.success(f"已新增元件: {new_group} - {new_endpoint}")
+                st.rerun()
 
+    # --- 【"Edit / Delete Component" 區塊 (已修正為 del key)】 ---
     with st.expander("✏️ Edit / Delete Component"):
         nodes_list = st.session_state.power_tree_data['nodes']
         def format_node_for_display_comp(node_id):
@@ -955,7 +959,7 @@ with tabs[1]:
                         node_to_edit['group'] = edited_group
                     
                     if widget_key_edit in st.session_state:
-                        del st.session_state[widget_key_edit]
+                        del st.session_state[widget_key_edit] # 使用 del 重設
                     st.success("已更新元件")
                     st.rerun()
         else:
@@ -991,12 +995,12 @@ with tabs[2]:
             
         st.subheader(f"Edit Modes for '{ps_options[selected_ps_id]}'")
         
+        # --- 【START：已修正 APIException 的「編輯模式」迴圈】 ---
         for mode_name, params in list(st.session_state.power_source_modes.get(selected_ps_id, {}).items()):
             if 'note' not in params: params['note'] = ""
             
             with st.expander(f"{mode_name}", expanded=False):
                 
-                # --- 【START：已修正的狀態管理邏輯】 ---
                 key_v = f"psm_v_{selected_ps_id}_{mode_name}"
                 key_eff = f"psm_eff_{selected_ps_id}_{mode_name}"
                 key_iq = f"psm_iq_{selected_ps_id}_{mode_name}"
@@ -1006,7 +1010,7 @@ with tabs[2]:
                     st.text_input("Output Voltage (V)", value="0.0 (Off)", disabled=True, key=key_v)
                     st.text_input("Efficiency (%)", value="N/A", disabled=True, key=key_eff)
                     
-                    # 1. Iq (可編輯)
+                    # 1. Iq (可編輯) - 使用 "Controlled Component" 模式
                     current_iq = params['quiescent_current_mA']
                     st.number_input("Quiescent Current (mA)", min_value=0.0, value=current_iq, key=key_iq, format="%.3f")
                     params['quiescent_current_mA'] = st.session_state[key_iq]
@@ -1033,9 +1037,8 @@ with tabs[2]:
                 current_note_val = params.get("note", "")
                 st.text_area("Mode Note", value=current_note_val, key=key_note)
                 params['note'] = st.session_state[key_note]
+                # --- 【END：修正】 ---
                 
-                # --- 【END：修正結束】 ---
-
                 st.markdown("---")
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1087,37 +1090,43 @@ with tabs[2]:
     st.markdown("---")
     st.subheader("Power Source Settings")
 
+    # --- 【START：已修正 APIException 的「新增電源」區塊 (改用 st.form)】 ---
     with st.expander("➕ Add New Power Source"):
-        new_label = st.text_input("新電源名稱", "New Power Source", key="new_ps_label")
-        ps_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
-        ps_options = {n['id']: n['label'] for n in ps_nodes}
-        ps_options_with_none = {"": "無 (設為根節點)", **ps_options}
-        new_input_source_id = st.selectbox("連接到哪個上游電源？", options=ps_options_with_none.keys(), format_func=lambda x: ps_options_with_none.get(x, "N/A"), key="new_ps_source")
-        new_efficiency_percent = st.number_input("'On' 模式效率 (%)", 0.0, 100.0, 90.0, step=1.0, key="new_ps_eff")
-        new_output_voltage = st.number_input("'On' 模式輸出電壓 (V)", min_value=0.0, value=1.8, key="new_ps_volt")
-        new_quiescent_current = st.number_input("靜態電流 (mA)", min_value=0.0, value=0.01, format="%.3f", key="new_ps_iq")
-        
-        if st.button("確認新增電源"):
-            new_id = f"node_{st.session_state.max_id + 1}"
-            new_node_data = {"id": new_id, "type": "power_source"}
-            new_node_data.update({
-                "label": new_label, "efficiency": new_efficiency_percent / 100.0, "output_voltage": new_output_voltage,
-                "quiescent_current_mA": new_quiescent_current, "input_source_id": new_input_source_id if new_input_source_id else None
-            })
-            base_note = new_node_data.get("note", "")
-            st.session_state.power_source_modes[new_id] = {
-                "On": {"output_voltage": new_output_voltage, "efficiency": new_efficiency_percent / 100.0, "quiescent_current_mA": new_quiescent_current, "note": base_note},
-                "Off": {"output_voltage": 0.0, "efficiency": 0.0, "quiescent_current_mA": new_quiescent_current, "note": "Device is off"}
-            }
-            for dm in st.session_state.device_modes.values():
-                if new_id not in dm["power_sources"]:
-                    dm["power_sources"][new_id] = "On"
+        with st.form(key="add_ps_form", clear_on_submit=True):
+            new_label = st.text_input("新電源名稱", "New Power Source")
+            ps_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
+            ps_options = {n['id']: n['label'] for n in ps_nodes}
+            ps_options_with_none = {"": "無 (設為根節點)", **ps_options}
+            new_input_source_id = st.selectbox("連接到哪個上游電源？", options=ps_options_with_none.keys(), format_func=lambda x: ps_options_with_none.get(x, "N/A"))
+            new_efficiency_percent = st.number_input("'On' 模式效率 (%)", 0.0, 100.0, 90.0, step=1.0)
+            new_output_voltage = st.number_input("'On' 模式輸出電壓 (V)", min_value=0.0, value=1.8)
+            new_quiescent_current = st.number_input("靜態電流 (mA)", min_value=0.0, value=0.01, format="%.3f")
             
-            st.session_state.power_tree_data['nodes'].append(new_node_data)
-            st.session_state.max_id += 1
-            st.success(f"已新增電源: {new_label}")
-            st.rerun()
+            submitted = st.form_submit_button("確認新增電源")
 
+            if submitted:
+                new_id = f"node_{st.session_state.max_id + 1}"
+                new_node_data = {"id": new_id, "type": "power_source"}
+                new_node_data.update({
+                    "label": new_label, "efficiency": new_efficiency_percent / 100.0, "output_voltage": new_output_voltage,
+                    "quiescent_current_mA": new_quiescent_current, "input_source_id": new_input_source_id if new_input_source_id else None
+                })
+                base_note = new_node_data.get("note", "")
+                st.session_state.power_source_modes[new_id] = {
+                    "On": {"output_voltage": new_output_voltage, "efficiency": new_efficiency_percent / 100.0, "quiescent_current_mA": new_quiescent_current, "note": base_note},
+                    "Off": {"output_voltage": 0.0, "efficiency": 0.0, "quiescent_current_mA": new_quiescent_current, "note": "Device is off"}
+                }
+                for dm in st.session_state.device_modes.values():
+                    if new_id not in dm["power_sources"]:
+                        dm["power_sources"][new_id] = "On"
+                
+                st.session_state.power_tree_data['nodes'].append(new_node_data)
+                st.session_state.max_id += 1
+                st.success(f"已新增電源: {new_label}")
+                st.rerun()
+    # --- 【END：修正】 ---
+
+    # --- 【START：已修正 APIException 的「編輯電源」區塊 (改用 del key)】 ---
     with st.expander("✏️ Edit / Delete Power Source"):
         nodes_list = st.session_state.power_tree_data['nodes']
         def format_node_for_display_ps(node_id):
@@ -1133,6 +1142,11 @@ with tabs[2]:
             node_to_edit = get_node_by_id(selected_node_id)
             
             if node_to_edit:
+                # 這裡的 key 必須與 'On' 模式的 key 不同
+                key_edit_v = f"edit_volt_{selected_node_id}"
+                key_edit_eff = f"edit_eff_{selected_node_id}"
+                key_edit_iq = f"edit_iq_{selected_node_id}"
+
                 edited_label = st.text_input("名稱", node_to_edit['label'], key=f"edit_label_{selected_node_id}")
                 upstream_ps = [n for n in nodes_list if n['type'] == 'power_source' and n['id'] != selected_node_id]
                 ups_options = {n['id']: n['label'] for n in upstream_ps}
@@ -1143,14 +1157,28 @@ with tabs[2]:
                 selected_ups_id_edit = st.selectbox("連接到哪個上游電源？", options=ups_ids, format_func=ups_options_with_none.get, index=default_index, key=f"edit_ps_source_{selected_node_id}")
 
                 on_mode_params = st.session_state.power_source_modes.get(selected_node_id, {}).get("On", {})
-                edited_efficiency_percent = st.number_input("'On' 模式效率 (%)", 0.0, 100.0, float(on_mode_params.get('efficiency', 0)) * 100, step=1.0, key=f"edit_eff_{selected_node_id}")
-                edited_output_voltage = st.number_input("'On' 模式輸出電壓 (V)", 0.0, value=float(on_mode_params.get('output_voltage', 0)), key=f"edit_volt_{selected_node_id}")
-                edited_quiescent_current = st.number_input("靜態電流 (mA)", min_value=0.0, value=float(on_mode_params.get('quiescent_current_mA', 0)), format="%.3f", key=f"edit_iq_{selected_node_id}")
+                
+                # 使用 "Controlled Component" 模式
+                if key_edit_eff not in st.session_state:
+                    st.session_state[key_edit_eff] = float(on_mode_params.get('efficiency', 0)) * 100
+                st.number_input("'On' 模式效率 (%)", 0.0, 100.0, step=1.0, key=key_edit_eff)
+                
+                if key_edit_v not in st.session_state:
+                    st.session_state[key_edit_v] = float(on_mode_params.get('output_voltage', 0))
+                st.number_input("'On' 模式輸出電壓 (V)", 0.0, key=key_edit_v)
+
+                if key_edit_iq not in st.session_state:
+                    st.session_state[key_edit_iq] = float(on_mode_params.get('quiescent_current_mA', 0))
+                st.number_input("靜態電流 (mA)", min_value=0.0, format="%.3f", key=key_edit_iq)
 
                 if st.button("更新電源", key=f"update_ps_{selected_node_id}"):
                     node_to_edit['label'] = edited_label
                     node_to_edit['input_source_id'] = selected_ups_id_edit if selected_ups_id_edit else None
                     
+                    edited_output_voltage = st.session_state[key_edit_v]
+                    edited_efficiency_percent = st.session_state[key_edit_eff]
+                    edited_quiescent_current = st.session_state[key_edit_iq]
+
                     existing_on_note = st.session_state.power_source_modes.get(selected_node_id, {}).get("On", {}).get("note", "")
                     st.session_state.power_source_modes[selected_node_id]["On"] = {
                         "output_voltage": edited_output_voltage,
@@ -1162,10 +1190,16 @@ with tabs[2]:
                     if "Off" in st.session_state.power_source_modes[selected_node_id]:
                         st.session_state.power_source_modes[selected_node_id]["Off"]["quiescent_current_mA"] = edited_quiescent_current
                     
+                    # 刪除 key 以重設
+                    del st.session_state[key_edit_v]
+                    del st.session_state[key_edit_eff]
+                    del st.session_state[key_edit_iq]
+
                     st.success("已更新電源")
                     st.rerun()
         else:
             st.info("沒有可編輯的電源。")
+    # --- 【END：修正】 ---
 
 # --- 【tabs[3]】 ---
 with tabs[3]:
