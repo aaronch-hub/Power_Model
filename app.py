@@ -619,8 +619,10 @@ with tabs[0]:
         st.session_state.active_device_mode = selected_device_mode
         st.rerun()
     
+    # 這兩個 placeholder 會被檔案末端的程式碼填入
     power_placeholder = st.empty()
     current_placeholder = st.empty()
+    
     with st.expander("Show / Hide Power Tree Visualizer", expanded=True):
         st.markdown("### Power Tree")
         graph_placeholder = st.empty()
@@ -658,7 +660,8 @@ with tabs[0]:
            title="Breakdown of Total Vsys Power Draw"
         )
 
-        pie = base.mark_arc(outerRadius=120, innerRadius=0).encode(
+        # --- 【已修改】 放大圓餅圖 ---
+        pie = base.mark_arc(outerRadius=160, innerRadius=0).encode(
             color=alt.Color("source:N", title="Power Source"),
             order=alt.Order("percentage:Q", sort="descending"),
             tooltip=["source", 
@@ -666,21 +669,19 @@ with tabs[0]:
                      alt.Tooltip("percentage:Q", format=".1%")]
         )
 
-        text = base.mark_text(radius=140).encode(
+        text = base.mark_text(radius=180).encode(
             text=alt.Text("percentage:Q", format=".1%"),
             order=alt.Order("percentage:Q", sort="descending"),
             color=alt.value("black")
         )
+        # --- 【修改結束】 ---
 
         chart = pie + text
         
-        # --- 【已修正】Altair 圖表「改回」use_container_width ---
         st.altair_chart(chart, use_container_width=True)
-        # ----------------------------------------------------
         
         st.markdown("##### Contribution Data Table (Vsys-Referred)")
         
-        # --- 【保持不變】DataFrame「維持」width='stretch' (這是對的) ---
         st.dataframe(
             df_contributions.sort_values(by="power_mW", ascending=False).set_index("source"),
             column_config={
@@ -695,7 +696,6 @@ with tabs[0]:
             },
             width='stretch'
         )
-        # ---------------------------------------------------------
     else:
         st.info("No power consumption data to display for the pie chart.")
         
@@ -720,7 +720,7 @@ with tabs[1]:
             
         st.markdown("---")
         
-        st.subheader(f"Component Current for {selected_group}'")
+        st.subheader(f"Component Current for {selected_group}")
         group_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component' and n['group'] == selected_group]
         
         if selected_group in st.session_state.operating_modes:
@@ -1313,13 +1313,15 @@ with tabs[4]:
 # ---
 total_power = calculate_power(st.session_state.active_device_mode)
 
-power_placeholder.write(f"**Total System Input Power:** {total_power:.2f} mW")
+# --- 【已修改】 移除 "Input" 並保持粗體 ---
+power_placeholder.write(f"**Total System Power:** {total_power:.2f} mW")
 vsys_node = get_node_by_id("battery")
 if vsys_node and vsys_node.get('output_voltage', 0) > 0:
     current = total_power / vsys_node['output_voltage']
-    current_placeholder.write(f"**Total Vsys Input Current:** {current:.2f} mA")
+    # --- 【已修改】 移除 "Input" 並保持粗體 ---
+    current_placeholder.write(f"**Total Vsys Current:** {current:.2f} mA")
 
-# 繪製 Power Tree
+# 繪製 Power Tree (此區塊保持不變)
 if st.session_state.theme == "Dark":
     graph_bgcolor = "black"
     edge_color = "white"
