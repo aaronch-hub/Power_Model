@@ -951,13 +951,13 @@ with tabs[2]:
         if base_node: 
             current_note = base_node.get("note", "")
             new_note = st.text_area(
-                f"Base Note for '{base_node['label']}'", 
+                f"Note for {base_node['label']}", 
                 value=current_note,
                 key=f"base_note_ps_{selected_ps_id}"
             )
             base_node["note"] = new_note
             
-        st.subheader(f"Edit Modes for '{ps_options[selected_ps_id]}'")
+        st.subheader(f"Edit Modes for {ps_options[selected_ps_id]}")
         
         for mode_name, params in list(st.session_state.power_source_modes.get(selected_ps_id, {}).items()):
             if 'note' not in params: params['note'] = ""
@@ -993,7 +993,7 @@ with tabs[2]:
                     params['quiescent_current_uA'] = st.session_state[key_iq] # <-- 已修改
                 
                 current_note_val = params.get("note", "")
-                st.text_area("Mode Note", value=current_note_val, key=key_note)
+                st.text_area("Note", value=current_note_val, key=key_note)
                 params['note'] = st.session_state[key_note]
                 
                 st.markdown("---")
