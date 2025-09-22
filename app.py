@@ -587,9 +587,7 @@ with tabs[0]:
     power_placeholder = st.empty()
     current_placeholder = st.empty()
     
-    # --- 【已修改】 預設改為收折 ---
     with st.expander("Show / Hide Power Tree Visualizer", expanded=False):
-    # --- 【修改結束】 ---
         st.markdown("### Power Tree")
         graph_placeholder = st.empty()
     
@@ -627,9 +625,10 @@ with tabs[0]:
            height=500
         )
         
-        # --- 【已修改】 再次放大圓餅圖 ---
         pie = base.mark_arc(outerRadius=200, innerRadius=0).encode(
-            color=alt.Color("source:N", title="Power Source"),
+            # --- 【已修改】 圖例標題 ---
+            color=alt.Color("source:N", title="Contribution Source"), # <-- 從 "Power Source" 改為 "Contribution Source"
+            # --- 【修改結束】 ---
             order=alt.Order("percentage:Q", sort="descending"),
             tooltip=["source", alt.Tooltip("power_mW:Q", format=".2f"), alt.Tooltip("percentage:Q", format=".1%")]
         )
@@ -638,7 +637,6 @@ with tabs[0]:
             order=alt.Order("percentage:Q", sort="descending"),
             color=alt.value(pie_text_color)
         )
-        # --- 【修改結束】 ---
         
         chart = pie + text
         st.altair_chart(chart, use_container_width=True)
