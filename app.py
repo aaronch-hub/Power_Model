@@ -80,24 +80,24 @@ def initialize_data():
             for mode_name, params in modes.items():
                 if 'note' not in params:
                     st.session_state.power_source_modes[ps_id][mode_name]['note'] = ""
-        
-        # --- 【新增】 檢查 battery_note ---
         if 'battery_note' not in st.session_state:
             st.session_state.battery_note = ""
-        # --- 【新增結束】 ---
+        if 'profile_dou_specs' not in st.session_state:
+            # 如果 specs 不在，為現有的 profile 補上預設值
+            st.session_state.profile_dou_specs = {profile_name: 7.0 for profile_name in st.session_state.user_profiles.keys()}
             
         return
 
-    # --- 1. 節點定義 (保持不變) ---
+    # --- 1. 【已修正】 完整的節點定義 ---
     st.session_state.power_tree_data = {
         "nodes": [
-            # Power Sources
+            # Power Sources (13 個)
             {"id": "battery", "label": "Vsys", "type": "power_source", "output_voltage": 3.85, "efficiency": 1.0, "quiescent_current_uA": 0.0, "input_source_id": None},
-            {"id": "vbb", "label": "VBB", "type": "power_source", "output_voltage": 3.9, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "battery"}, 
-            {"id": "pmic_buck", "label": "PMIC (BUCK_1V8)", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.95, "quiescent_current_uA": 50.0, "input_source_id": "battery"}, 
-            {"id": "pmic_ldo1", "label": "PMIC (LDO1)", "type": "power_source", "output_voltage": 3.3, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "battery"}, 
-            {"id": "pmic_ldo2", "label": "PMIC (LDO2)", "type": "power_source", "output_voltage": 3.6, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "vbb"}, 
-            {"id": "display_1v8", "label": "Display 1V8", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"}, 
+            {"id": "vbb", "label": "VBB", "type": "power_source", "output_voltage": 3.9, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "battery"},
+            {"id": "pmic_buck", "label": "PMIC (BUCK_1V8)", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.95, "quiescent_current_uA": 50.0, "input_source_id": "battery"},
+            {"id": "pmic_ldo1", "label": "PMIC (LDO1)", "type": "power_source", "output_voltage": 3.3, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "battery"},
+            {"id": "pmic_ldo2", "label": "PMIC (LDO2)", "type": "power_source", "output_voltage": 3.6, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "vbb"},
+            {"id": "display_1v8", "label": "Display 1V8", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"},
             {"id": "ext_ldo_avdd", "label": "ext. LDO AVDD", "type": "power_source", "output_voltage": 3.0, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "battery"},
             {"id": "ldo_mcu", "label": "LDO_MCU", "type": "power_source", "output_voltage": 0.9, "efficiency": 0.5, "quiescent_current_uA": 10.0, "input_source_id": "battery"},
             {"id": "dd_ovdd", "label": "Display Driver OVDD", "type": "power_source", "output_voltage": 4.5, "efficiency": 0.85, "quiescent_current_uA": 30.0, "input_source_id": "battery"},
@@ -106,7 +106,7 @@ def initialize_data():
             {"id": "lsw3_mcu", "label": "LSW3 MCU", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"},
             {"id": "drv2624", "label": "DRV2624", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck", "note": "I2C Address: 0x5A and 0x58"},
             
-            # Components
+            # Components (18 個)
             {"id": "mcu", "type": "component", "group": "SoC", "endpoint": "MCU Core", "power_consumption": 2.5, "input_source_id": "pmic_buck"},
             {"id": "ble", "type": "component", "group": "SoC", "endpoint": "BLE Radio", "power_consumption": 5.0, "input_source_id": "pmic_buck"},
             {"id": "soc_core", "type": "component", "group": "SoC", "endpoint": "core", "power_consumption": 1.0, "input_source_id": "ldo_mcu"},
@@ -127,7 +127,7 @@ def initialize_data():
             {"id": "node_26", "type": "component", "group": "Temp Sensor TMP118B", "endpoint": "VDD", "power_consumption": 1.0, "input_source_id": "pmic_buck"},
         ]
     }
-    st.session_state.max_id = 26
+    st.session_state.max_id = 26 # 已修正回 26
 
     st.session_state.group_colors = {
         "SoC": "#FFC107", "Display Module": "#4CAF50", "AFE4510": "#F44336",
@@ -209,17 +209,22 @@ def initialize_data():
 
     st.session_state.component_group_notes = {group: "" for group in all_comp_groups}
 
-    # --- 4. 建立 Use Cases ---
+    # --- 4. 建立 Use Cases (使用新的預設邏輯) ---
     default_comp_settings = {}
     for group in all_comp_groups:
         group_modes = st.session_state.operating_modes.get(group, {})
+        
+        # 建立一個所有模式為 0 的基礎字典
+        default_ratio_dict = {mode: 0 for mode in group_modes}
+
         if "Default" in group_modes:
-            default_comp_settings[group] = {"Default": 100}
+            default_ratio_dict["Default"] = 100 # 預設使用 "Default"
         elif group_modes:
+            # 如果沒有 "Default"，使用第一個可用的模式
             first_mode = list(group_modes.keys())[0]
-            default_ratio_dict = {mode: 0 for mode in group_modes}
             default_ratio_dict[first_mode] = 100
-            default_comp_settings[group] = default_ratio_dict
+        
+        default_comp_settings[group] = default_ratio_dict
             
     default_ps_settings = {ps['id']: "On" for ps in power_source_nodes}
     default_use_case_settings = {"components": default_comp_settings, "power_sources": default_ps_settings}
@@ -245,13 +250,14 @@ def initialize_data():
     
     st.session_state.active_use_case = new_use_case_names[0]
     
-    # --- 5. User Profiles ---
+    # --- 5. User Profiles (包含 DOU Specs) ---
     st.session_state.battery_capacity_mAh = 64.5
-    st.session_state.battery_note = "" # <-- 【新增】 在此處初始化
+    st.session_state.battery_note = ""
     
     all_use_case_names = list(st.session_state.use_cases.keys())
     empty_profile = {name: 0 for name in all_use_case_names}
     
+    # (您貼上的表格會在這裡被處理)
     all_profiles_data = {
         "Typical User": {
             "On-wrist stationary, BLE connected": 36000,
@@ -271,10 +277,13 @@ def initialize_data():
     }
 
     st.session_state.user_profiles = {}
+    st.session_state.profile_dou_specs = {} 
+
     for profile_name, hours_dict in all_profiles_data.items():
         clean_profile = copy.deepcopy(empty_profile)
         clean_profile.update(hours_dict)
         st.session_state.user_profiles[profile_name] = clean_profile
+        st.session_state.profile_dou_specs[profile_name] = 7.0 
 
     st.session_state.active_user_profile = list(st.session_state.user_profiles.keys())[0]
     
@@ -473,6 +482,58 @@ def get_vsys_referred_power_contributions(node_list):
     
     return final_df
 
+def calculate_average_profile_breakdown(profile_name):
+    """
+    計算一個 User Profile 的「加權平均」元件功耗佔比。
+    """
+    if profile_name not in st.session_state.user_profiles:
+        return pd.DataFrame(columns=["source", "power_mW", "type"])
+    
+    profile_data = st.session_state.user_profiles[profile_name]
+    total_seconds = sum(profile_data.values())
+    if total_seconds == 0:
+        total_seconds = 86400 # 避免除以零
+
+    total_contributions = defaultdict(float)
+    contribution_types = {} # 用來儲存 "Component Load" vs "Quiescent Loss"
+
+    # 1. 遍歷 Profile 中的所有 Use Case 及其秒數
+    for uc_name, seconds in profile_data.items():
+        if seconds <= 0:
+            continue
+        
+        # 2. 呼叫 calculate_power() 來為「這一個」Use Case 設定 power_tree 狀態
+        # (注意：這會呼叫 apply_use_case)
+        calculate_power(use_case_name_override=uc_name)
+        
+        # 3. 取得「這一個」Use Case 的功耗分佈
+        df_uc_breakdown = get_vsys_referred_power_contributions(st.session_state.power_tree_data['nodes'])
+        
+        # 4. 計算此 Use Case 中，每個元件貢獻的「能量」(mW-s)，並加總
+        for _, row in df_uc_breakdown.iterrows():
+            source_name = row['source']
+            power_mW = row['power_mW']
+            energy_mW_s = power_mW * seconds # (功耗 * 時間 = 能量)
+            
+            total_contributions[source_name] += energy_mW_s
+            
+            if source_name not in contribution_types:
+                contribution_types[source_name] = row['type']
+
+    if not total_contributions:
+         return pd.DataFrame(columns=["source", "power_mW", "type"])
+
+    # 5. 將總能量 (mW-s) 除以總時間 (s)，換算回「平均功耗 (mW)」
+    avg_contributions_data = []
+    for source, total_energy in total_contributions.items():
+        avg_power = total_energy / total_seconds
+        avg_contributions_data.append({
+            "source": source,
+            "power_mW": avg_power,
+            "type": contribution_types.get(source, "Unknown")
+        })
+        
+    return pd.DataFrame(avg_contributions_data)
 
 # ===============================================================
 #  側邊欄 UI (Sidebar UI)
@@ -520,7 +581,8 @@ with st.sidebar:
             'battery_capacity_mAh': st.session_state.battery_capacity_mAh,
             'user_profiles': st.session_state.user_profiles,
             'component_group_notes': st.session_state.component_group_notes,
-            'battery_note': st.session_state.battery_note # <-- 【新增】 確保筆記被儲存
+            'battery_note': st.session_state.battery_note,
+            'profile_dou_specs': st.session_state.profile_dou_specs # <-- 【新增】 確保 Spec 被儲存
         }
         
         try:
@@ -569,11 +631,13 @@ with st.sidebar:
 
 # === 側邊欄結束 ===
 
+# === 側邊欄結束 ===
+
 # ===============================================================
 #  主內容頁面 (Main Content)
 # ===============================================================
 
-tabs = st.tabs(["Power Tree", "Component Management", "Power Source Management", "Use Case Management", "Battery Life Estimation"])
+tabs = st.tabs(["Power Tree", "Component Management", "Power Source Management", "Use Case Management", "Battery Life Estimation", "Profile Breakdown"])
 
 calculate_power(st.session_state.active_use_case)
 
@@ -1331,18 +1395,44 @@ with tabs[4]:
     st.number_input("Battery Capacity (mAh)", min_value=0.0, value=st.session_state.battery_capacity_mAh, key="battery_capacity_input")
     st.session_state.battery_capacity_mAh = st.session_state.battery_capacity_input
 
-    # --- 【START：新增的「Battery Note」】 ---
     st.session_state.battery_note = st.text_area(
         "Battery Notes", 
-        value=st.session_state.get("battery_note", ""), # 使用 .get() 避免錯誤
+        value=st.session_state.get("battery_note", ""),
         key="battery_note_input",
         placeholder="Enter notes about the battery, e.g., model number, age, test conditions..."
     )
-    # --- 【END：新增】 ---
-    st.markdown("---")
-    st.subheader("Estimation Results Summary")
 
-    # --- 1. 計算並顯示「結果總覽表格」(保持不變) ---
+    st.markdown("---")
+    st.subheader("1. Edit DOU Spec (Days)")
+    
+    all_profiles = list(st.session_state.user_profiles.keys())
+    spec_data = {}
+    for profile_name in all_profiles:
+        if profile_name not in st.session_state.profile_dou_specs:
+            st.session_state.profile_dou_specs[profile_name] = 7.0 
+        spec_data[profile_name] = st.session_state.profile_dou_specs[profile_name]
+
+    df_specs = pd.DataFrame(spec_data, index=["DOU spec (days)"])
+    
+    edited_specs_df = st.data_editor(
+        df_specs,
+        key="dou_spec_editor",
+        width='stretch',
+        column_config={
+            profile_name: st.column_config.NumberColumn(
+                label=profile_name,
+                min_value=0.0,
+                step=0.1,
+                format="%.1f"
+            ) for profile_name in all_profiles
+        }
+    )
+
+    st.session_state.profile_dou_specs = edited_specs_df.to_dict('records')[0]
+    
+    st.markdown("---")
+    st.subheader("2. Estimation Results Summary")
+
     power_per_use_case = {uc: calculate_power(use_case_name_override=uc) for uc in st.session_state.use_cases}
     vsys_node = get_node_by_id("battery")
     vsys_voltage = vsys_node['output_voltage'] if vsys_node else 3.85
@@ -1362,24 +1452,44 @@ with tabs[4]:
 
         profile_summary = {
             "Profile": profile_name,
-            "Battery Life (Days)": f"{battery_life_days:.2f}",
-            "Avg. Power (mW)": f"{avg_power_mW:.2f}",
-            "Avg. Current (uA)": f"{avg_current_mA * 1000.0:.0f}"
+            "Battery Life (Days)": battery_life_days,
+            "Avg. Power (mW)": avg_power_mW,
+            "Avg. Current (uA)": avg_current_mA * 1000.0
         }
         results_data.append(profile_summary)
 
     if results_data:
-        df_results = pd.DataFrame(results_data)
-        st.dataframe(df_results.set_index('Profile').T, width='stretch')
+        df_results = pd.DataFrame(results_data).set_index('Profile')
+        df_results_T = df_results.T
+        dou_specs = st.session_state.profile_dou_specs 
+
+        def style_battery_life(col):
+            spec = dou_specs.get(col.name, 0) 
+            life = col["Battery Life (Days)"]
+            style = [''] * len(col)
+            if life >= spec:
+                style[0] = 'background-color: #2E7D32; color: white;' # Green
+            else:
+                style[0] = 'background-color: #D32F2F; color: white;' # Red
+            return style
+
+        # --- 【START：已修改的小數點位數】 ---
+        styled_df = df_results_T.style.apply(style_battery_life, axis=0).format({
+            "Battery Life (Days)": "{:.1f}",
+            "Avg. Power (mW)": "{:.1f}",
+            "Avg. Current (uA)": "{:.1f}"
+        })
+        # --- 【END：修改】 ---
+        
+        st.dataframe(styled_df, width='stretch')
+        
     else:
         st.info("No User Profiles found. Add one below.")
-    # --- 「結果總覽表格」結束 ---
-
 
     st.markdown("---")
-    st.subheader("User Profiles")
+    st.subheader("Edit Use Case Seconds")
 
-    with st.expander("Edit User Profile (Seconds)", expanded=True):
+    with st.expander("Edit Use Case Seconds per Profile (Table)", expanded=True):
         
         all_use_cases = list(st.session_state.use_cases.keys())
         all_profiles = list(st.session_state.user_profiles.keys())
@@ -1395,7 +1505,7 @@ with tabs[4]:
         edited_df = st.data_editor(
             df_editor,
             key="profile_data_editor",
-            use_container_width=True,
+            width='stretch',
             column_config={
                 profile_name: st.column_config.NumberColumn(
                     label=profile_name,
@@ -1417,19 +1527,14 @@ with tabs[4]:
         if needs_update:
             st.rerun()
 
-        # --- 【START：已修改】 ---
-        # 移除了 "Total Seconds per Day" 標題
         total_seconds_per_profile = edited_df.sum()
         total_seconds_per_profile.name = "Total Seconds"
-        st.dataframe(total_seconds_per_profile, use_container_width=True) # 總和表格緊跟在 data_editor 下方
-        # --- 【END：修改】 ---
+        st.dataframe(total_seconds_per_profile, width='stretch')
         
         invalid_profiles = total_seconds_per_profile[total_seconds_per_profile != 86400].index.tolist()
         if invalid_profiles:
             st.error(f"警告：以下 Profile 的總秒數不等於 86400： {', '.join(invalid_profiles)}")
 
-
-    # (新增/刪除 Profile 的功能保持不變)
     st.markdown("---")
     with st.expander("➕ Add / 🗑️ Delete Profile"):
         
@@ -1443,6 +1548,8 @@ with tabs[4]:
             if profile_to_delete and profile_to_delete in st.session_state.user_profiles:
                 if len(st.session_state.user_profiles) > 1:
                     del st.session_state.user_profiles[profile_to_delete]
+                    if profile_to_delete in st.session_state.profile_dou_specs:
+                        del st.session_state.profile_dou_specs[profile_to_delete]
                     st.success(f"已刪除 Profile: '{profile_to_delete}'")
                     st.rerun()
                 else:
@@ -1455,11 +1562,84 @@ with tabs[4]:
         if st.button("Add Profile", type="secondary"):
             if profile_name and profile_name not in st.session_state.user_profiles:
                 st.session_state.user_profiles[profile_name] = {uc_name: 0 for uc_name in st.session_state.use_cases}
+                st.session_state.profile_dou_specs[profile_name] = 7.0 
                 st.rerun()
             elif not profile_name:
                 st.error("設定檔名稱不可為空。")
             else:
                 st.error(f"設定檔 '{profile_name}' 已存在。")
+
+
+# --- 【tabs[5]】(新增的 Profile Breakdown) ---
+with tabs[5]:
+    st.header("Average Power Breakdown per Profile")
+    
+    # 1. 讓使用者選擇要分析哪一個 Profile
+    profile_list = list(st.session_state.user_profiles.keys())
+    selected_profile = st.selectbox(
+        "Select a User Profile to analyze its breakdown",
+        options=profile_list,
+        key="profile_breakdown_selector"
+    )
+    
+    if selected_profile:
+        # 2. 呼叫新函數，計算加權平均
+        df_avg_contributions = calculate_average_profile_breakdown(selected_profile)
+        
+        # 3. 渲染圖表和表格 (邏輯同 tabs[0])
+        if not df_avg_contributions.empty:
+            total_avg_power = df_avg_contributions['power_mW'].sum()
+            if total_avg_power > 0:
+                df_avg_contributions['percentage'] = (df_avg_contributions['power_mW'] / total_avg_power)
+            else:
+                df_avg_contributions['percentage'] = 0.0
+
+            df_main = df_avg_contributions[df_avg_contributions['percentage'] >= 0.01].copy()
+            other_power = df_avg_contributions[df_avg_contributions['percentage'] < 0.01]['power_mW'].sum()
+            other_percentage = df_avg_contributions[df_avg_contributions['percentage'] < 0.01]['percentage'].sum()
+
+            if other_power > 0:
+                other_df = pd.DataFrame([{"source": "Others (<1%)", "power_mW": other_power, "type": "Others", "percentage": other_percentage}])
+                df_chart = pd.concat([df_main, other_df], ignore_index=True)
+            else:
+                df_chart = df_main
+
+            if st.session_state.theme == "Dark":
+                pie_text_color = "white"
+            else:
+                pie_text_color = "black"
+
+            base = alt.Chart(df_chart).encode(
+               theta=alt.Theta("power_mW:Q", stack=True)
+            ).properties(
+               title=f"Average Power Breakdown for '{selected_profile}'", # 動態標題
+               height=500
+            )
+            pie = base.mark_arc(outerRadius=180, innerRadius=0).encode(
+                color=alt.Color("source:N", title="Contribution Source"),
+                order=alt.Order("percentage:Q", sort="descending"),
+                tooltip=["source", alt.Tooltip("power_mW:Q", format=".3f"), alt.Tooltip("percentage:Q", format=".1%")] # 顯示 3 位小數
+            )
+            text = base.mark_text(radius=200).encode(
+                text=alt.Text("percentage:Q", format=".1%"),
+                order=alt.Order("percentage:Q", sort="descending"),
+                color=alt.value(pie_text_color)
+            )
+            chart = pie + text
+            st.altair_chart(chart, use_container_width=True)
+            
+            st.markdown("##### Average Contribution Data Table (Vsys-Referred)")
+            st.dataframe(
+                df_avg_contributions.sort_values(by="power_mW", ascending=False).set_index("source"),
+                column_config={
+                    "power_mW": st.column_config.NumberColumn("Avg. Power (mW)", format="%.3f"), # 顯示 3 位小數
+                    "type": "Source Type",
+                    "percentage": st.column_config.ProgressColumn("Percentage", format="%.3f", min_value=0, max_value=1)
+                },
+                width='stretch'
+            )
+        else:
+            st.info(f"No power consumption data found for profile '{selected_profile}'.")
 
 
 # ---
