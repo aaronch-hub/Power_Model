@@ -622,7 +622,7 @@ with tabs[0]:
            theta=alt.Theta("power_mW:Q", stack=True)
         ).properties(
            title="Breakdown of Total Vsys Power Draw",
-           height=500
+           height=600
         )
         
         pie = base.mark_arc(outerRadius=200, innerRadius=0).encode(
