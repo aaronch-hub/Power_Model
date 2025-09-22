@@ -1206,7 +1206,7 @@ with tabs[3]:
                 idx = ps_modes.index(current_ps_mode) if current_ps_mode in ps_modes else 0
                 
                 selected_ps_mode = st.selectbox(
-                    f"Mode for '{ps_node['label']}'", options=ps_modes, index=idx, key=f"uc_ps_select_{uc_name}_{ps_node['id']}"
+                    f"{ps_node['label']}", options=ps_modes, index=idx, key=f"uc_ps_select_{uc_name}_{ps_node['id']}"
                 )
                 uc_settings["power_sources"][ps_node['id']] = selected_ps_mode
             
