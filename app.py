@@ -381,6 +381,8 @@ def calculate_power(use_case_name_override=None):
 
 
 def get_vsys_referred_power_contributions(node_list):
+
+    # 內部輔助函數 (保持不變)
     def trace_power_to_root(load_mW, start_node_id):
         current_node = get_node_by_id(start_node_id)
         power = load_mW
@@ -392,19 +394,27 @@ def get_vsys_referred_power_contributions(node_list):
         return power
 
     contributions = []
+    
+    # --- 1. 計算所有「元件負載」的 Vsys 參考功耗 ---
+    # (這部分已包含「工作功耗」+「效率損耗」)
     component_nodes = [n for n in node_list if n['type'] == 'component']
     for node in component_nodes:
         if node.get('power_consumption', 0) > 0:
             component_load_mW = node['power_consumption']
             vsys_referred_power = trace_power_to_root(component_load_mW, node.get('input_source_id'))
-            label = node['group']
-            contributions.append({"source": label, "power_mW": vsys_referred_power, "type": "Component Load"})
-    
+            
+            label = node['group'] # 以 Group 為單位
+            contributions.append({
+                "source": label, 
+                "power_mW": vsys_referred_power, 
+                "type": "Component Load"
+            })
+
+    # --- 2. 計算所有「靜態電流 (Iq) 損耗」的 Vsys 參考功耗 ---
     power_source_nodes = [n for n in node_list if n['type'] == 'power_source']
     for node in power_source_nodes:
         
-        # --- 【已修改】 讀取 uA 並除以 1000 ---
-        quiescent_current_uA = node.get('quiescent_current_uA', 0.0) # <-- 已重命名
+        quiescent_current_uA = node.get('quiescent_current_uA', 0.0)
         if quiescent_current_uA > 0:
             parent_node = get_node_by_id(node.get('input_source_id'))
             if parent_node:
@@ -413,34 +423,41 @@ def get_vsys_referred_power_contributions(node_list):
             else:
                 input_voltage = node.get('output_voltage', 0.0) 
                 parent_id_to_trace_from = None 
-            
-            iq_load_mW = input_voltage * (quiescent_current_uA / 1000.0) # <-- 除以 1000
+
+            iq_load_mW = input_voltage * (quiescent_current_uA / 1000.0) # 轉回 mW
             vsys_referred_iq_power = trace_power_to_root(iq_load_mW, parent_id_to_trace_from)
 
             if vsys_referred_iq_power > 0.0001:
                 label = f"{node['label']} (Iq Loss)"
-                contributions.append({"source": label, "power_mW": vsys_referred_iq_power, "type": "Quiescent Loss"})
+                contributions.append({
+                    "source": label,
+                    "power_mW": vsys_referred_iq_power,
+                    "type": "Quiescent Loss"
+                })
 
-        efficiency = node.get('efficiency', 1.0)
-        if 0 < efficiency < 1.0:
-            output_power_mW = node.get('output_power_total', 0.0)
-            if output_power_mW > 0:
-                efficiency_loss_mW = output_power_mW * ((1.0 / efficiency) - 1.0)
-                vsys_referred_eff_loss = trace_power_to_root(efficiency_loss_mW, node.get('input_source_id'))
-                if vsys_referred_eff_loss > 0.0001:
-                    label = f"{node['label']} (Efficiency Loss)"
-                    contributions.append({"source": label, "power_mW": vsys_referred_eff_loss, "type": "Efficiency Loss"})
+
 
     if not contributions:
         return pd.DataFrame(columns=["source", "power_mW", "type"])
+        
     df = pd.DataFrame(contributions)
+
+    # --- 3. GroupBy (現在加總所有類型) ---
+    # 我們需要加總 Component Load (依群組) 和 Quiescent Loss (依節點)
     df_components = df[df['type'] == 'Component Load']
-    df_losses = df[df['type'] != 'Component Load']
+    df_losses = df[df['type'] == 'Quiescent Loss'] # 只選 Iq Loss
+    
     if not df_components.empty:
-        df_components_grouped = df_components.groupby('source').agg(power_mW=('power_mW', 'sum'), type=('type', 'first')).reset_index()
+        df_components_grouped = df_components.groupby('source').agg(
+            power_mW=('power_mW', 'sum'),
+            type=('type', 'first')
+        ).reset_index()
     else:
         df_components_grouped = pd.DataFrame(columns=['source', 'power_mW', 'type'])
+    
+    # 將加總後的 Component 和「所有獨立的 Iq 損耗項」重新組合
     final_df = pd.concat([df_components_grouped, df_losses], ignore_index=True)
+    
     return final_df
 
 
