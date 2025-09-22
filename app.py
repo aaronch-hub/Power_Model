@@ -35,86 +35,32 @@ div[data-testid="stVerticalBlock"] .stNumberInput {
 if st.session_state.theme == "Dark":
     st.markdown("""
         <style>
-        /* 深色主題：主頁面與側邊欄背景 */
-        .stApp, [data-testid="stSidebar"] {
-            background-color: #0e1117;
-        }
-        /* 深色主題：所有文字顏色 */
-        h1, h2, h3, h4, h5, h6, .st-emotion-cache-16txtl3, p, .st-emotion-cache-1y4p8pa {
-            color: #fafafa !important;
-        }
-        
-        /* 設定 Expander 標頭與箭頭顏色 */
-        [data-testid="stExpander"] summary {
-            color: #fafafa !important;
-        }
-        /* 設定 Expander 內容區塊的背景色 */
-        div[data-testid="stExpander"] div[role="region"] {
-             background-color: #1c1f2b; 
-        }
-        
-        /* 【新增】修正元件背景 (Dark) */
-        [data-testid="stBlockContainer"], [data-testid="stDataFrame"], .stChart {
-            background-color: #0e1117 !important;
-        }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div { 
-            background-color: #1c1f2b !important; 
-            border-color: #AAAAAA !important;
-        }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div > div { 
-            color: #fafafa !important; 
-        }
-        div[data-baseweb="popover"] ul[role="listbox"] { 
-            background-color: #1c1f2b !important;
-        }
-        li[role="option"] { 
-            color: #fafafa !important;
-        }
+        /* ... (Dark Theme CSS 保持不變) ... */
+        .stApp, [data-testid="stSidebar"] { background-color: #0e1117; }
+        h1, h2, h3, h4, h5, h6, .st-emotion-cache-16txtl3, p, .st-emotion-cache-1y4p8pa { color: #fafafa !important; }
+        [data-testid="stExpander"] summary { color: #fafafa !important; }
+        div[data-testid="stExpander"] div[role="region"] { background-color: #1c1f2b; }
+        [data-testid="stBlockContainer"], [data-testid="stDataFrame"], .stChart { background-color: #0e1117 !important; }
+        [data-testid="stSelectbox"] div[data-baseweb="select"] > div { background-color: #1c1f2b !important; border-color: #AAAAAA !important; }
+        [data-testid="stSelectbox"] div[data-baseweb="select"] > div > div { color: #fafafa !important; }
+        div[data-baseweb="popover"] ul[role="listbox"] { background-color: #1c1f2b !important; }
+        li[role="option"] { color: #fafafa !important; }
         </style>
     """, unsafe_allow_html=True)
 else: # Light Theme
     st.markdown("""
         <style>
-        /* 淺色主題：主頁面背景 */
-        .stApp {
-            background-color: #FFFFFF;
-        }
-        /* 淺色主題：側邊欄背景 (淺灰色) */
-        [data-testid="stSidebar"] {
-            background-color: #F0F2F6;
-        }
-
-        /* 【新增】修正元件背景 (Light) */
-        [data-testid="stBlockContainer"], [data-testid="stDataFrame"], .stChart {
-            background-color: #FFFFFF !important;
-            border-color: #F0F2F6 !important;
-        }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div { 
-            background-color: #FFFFFF !important; 
-            border-color: #AAAAAA !important;
-        }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div > div { 
-            color: #0e1117 !important; 
-        }
-        div[data-baseweb="popover"] ul[role="listbox"] { 
-            background-color: #FFFFFF !important;
-        }
-        li[role="option"] { 
-            color: #0e1117 !important;
-        }
-        
-        /* 淺色主題：所有文字顏色 */
-        h1, h2, h3, h4, h5, h6, .st-emotion-cache-16txtl3, p, .st-emotion-cache-1y4p8pa {
-            color: #0e1117 !important;
-        }
-        /* 設定 Expander 標頭與箭頭顏色為黑色 */
-        [data-testid="stExpander"] summary {
-            color: #0e1117 !important;
-        }
-        /* 設定 Expander 內容區塊的背景色，使其與側邊欄一致 */
-        div[data-testid="stExpander"] div[role="region"] {
-             background-color: #F0F2F6;
-        }
+        /* ... (Light Theme CSS 保持不變) ... */
+        .stApp { background-color: #FFFFFF; }
+        [data-testid="stSidebar"] { background-color: #F0F2F6; }
+        [data-testid="stBlockContainer"], [data-testid="stDataFrame"], .stChart { background-color: #FFFFFF !important; border-color: #F0F2F6 !important; }
+        [data-testid="stSelectbox"] div[data-baseweb="select"] > div { background-color: #FFFFFF !important; border-color: #AAAAAA !important; }
+        [data-testid="stSelectbox"] div[data-baseweb="select"] > div > div { color: #0e1117 !important; }
+        div[data-baseweb="popover"] ul[role="listbox"] { background-color: #FFFFFF !important; }
+        li[role="option"] { color: #0e1117 !important; }
+        h1, h2, h3, h4, h5, h6, .st-emotion-cache-16txtl3, p, .st-emotion-cache-1y4p8pa { color: #0e1117 !important; }
+        [data-testid="stExpander"] summary { color: #0e1117 !important; }
+        div[data-testid="stExpander"] div[role="region"] { background-color: #F0F2F6; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -136,25 +82,25 @@ def initialize_data():
                     st.session_state.power_source_modes[ps_id][mode_name]['note'] = ""
         return
 
-    # --- 1. 節點定義 (保持不變) ---
+    # --- 1. 節點定義 (【已修改】quiescent_current_mA -> quiescent_current_uA) ---
     st.session_state.power_tree_data = {
         "nodes": [
             # Power Sources
-            {"id": "battery", "label": "Vsys", "type": "power_source", "output_voltage": 3.85, "efficiency": 1.0, "quiescent_current_mA": 0.0, "input_source_id": None},
-            {"id": "vbb", "label": "VBB", "type": "power_source", "output_voltage": 3.9, "efficiency": 0.9, "quiescent_current_mA": 0.01, "input_source_id": "battery"},
-            {"id": "pmic_buck", "label": "PMIC (BUCK_1V8)", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.95, "quiescent_current_mA": 0.05, "input_source_id": "battery"},
-            {"id": "pmic_ldo1", "label": "PMIC (LDO1)", "type": "power_source", "output_voltage": 3.3, "efficiency": 0.85, "quiescent_current_mA": 0.02, "input_source_id": "battery"},
-            {"id": "pmic_ldo2", "label": "PMIC (LDO2)", "type": "power_source", "output_voltage": 3.6, "efficiency": 0.85, "quiescent_current_mA": 0.02, "input_source_id": "vbb"},
-            {"id": "display_1v8", "label": "Display 1V8", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.9, "quiescent_current_mA": 0.01, "input_source_id": "pmic_buck"},
-            {"id": "ext_ldo_avdd", "label": "ext. LDO AVDD", "type": "power_source", "output_voltage": 3.0, "efficiency": 0.85, "quiescent_current_mA": 0.01, "input_source_id": "battery"},
-            {"id": "ldo_mcu", "label": "LDO_MCU", "type": "power_source", "output_voltage": 0.9, "efficiency": 0.5, "quiescent_current_mA": 0.01, "input_source_id": "battery"},
-            {"id": "dd_ovdd", "label": "Display Driver OVDD", "type": "power_source", "output_voltage": 4.5, "efficiency": 0.85, "quiescent_current_mA": 0.03, "input_source_id": "battery"},
-            {"id": "dd_ovss", "label": "Display Driver OVSS", "type": "power_source", "output_voltage": 4.5, "efficiency": 0.85, "quiescent_current_mA": 0.03, "input_source_id": "battery"},
-            {"id": "ls_mcu", "label": "LS MCU", "type": "power_source", "output_voltage": 1.2, "efficiency": 0.85, "quiescent_current_mA": 0.01, "input_source_id": "pmic_buck"},
-            {"id": "lsw3_mcu", "label": "LSW3 MCU", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.85, "quiescent_current_mA": 0.01, "input_source_id": "pmic_buck"},
-            {"id": "drv2624", "label": "DRV2624", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.85, "quiescent_current_mA": 0.01, "input_source_id": "pmic_buck", "note": "I2C Address: 0x5A and 0x58"},
+            {"id": "battery", "label": "Vsys", "type": "power_source", "output_voltage": 3.85, "efficiency": 1.0, "quiescent_current_uA": 0.0, "input_source_id": None},
+            {"id": "vbb", "label": "VBB", "type": "power_source", "output_voltage": 3.9, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "battery"}, # 0.01mA -> 10uA
+            {"id": "pmic_buck", "label": "PMIC (BUCK_1V8)", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.95, "quiescent_current_uA": 50.0, "input_source_id": "battery"}, # 0.05mA -> 50uA
+            {"id": "pmic_ldo1", "label": "PMIC (LDO1)", "type": "power_source", "output_voltage": 3.3, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "battery"}, # 0.02mA -> 20uA
+            {"id": "pmic_ldo2", "label": "PMIC (LDO2)", "type": "power_source", "output_voltage": 3.6, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "vbb"}, # 0.02mA -> 20uA
+            {"id": "display_1v8", "label": "Display 1V8", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"}, # 0.01mA -> 10uA
+            {"id": "ext_ldo_avdd", "label": "ext. LDO AVDD", "type": "power_source", "output_voltage": 3.0, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "battery"},
+            {"id": "ldo_mcu", "label": "LDO_MCU", "type": "power_source", "output_voltage": 0.9, "efficiency": 0.5, "quiescent_current_uA": 10.0, "input_source_id": "battery"},
+            {"id": "dd_ovdd", "label": "Display Driver OVDD", "type": "power_source", "output_voltage": 4.5, "efficiency": 0.85, "quiescent_current_uA": 30.0, "input_source_id": "battery"},
+            {"id": "dd_ovss", "label": "Display Driver OVSS", "type": "power_source", "output_voltage": 4.5, "efficiency": 0.85, "quiescent_current_uA": 30.0, "input_source_id": "battery"},
+            {"id": "ls_mcu", "label": "LS MCU", "type": "power_source", "output_voltage": 1.2, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"},
+            {"id": "lsw3_mcu", "label": "LSW3 MCU", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"},
+            {"id": "drv2624", "label": "DRV2624", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck", "note": "I2C Address: 0x5A and 0x58"},
             
-            # Components (power_consumption 欄位現在只在初始化時使用一次)
+            # Components (power_consumption 欄位只在初始化時使用一次)
             {"id": "mcu", "type": "component", "group": "SoC", "endpoint": "MCU Core", "power_consumption": 2.5, "input_source_id": "pmic_buck"},
             {"id": "ble", "type": "component", "group": "SoC", "endpoint": "BLE Radio", "power_consumption": 5.0, "input_source_id": "pmic_buck"},
             {"id": "soc_core", "type": "component", "group": "SoC", "endpoint": "core", "power_consumption": 1.0, "input_source_id": "ldo_mcu"},
@@ -175,7 +121,7 @@ def initialize_data():
             {"id": "node_26", "type": "component", "group": "Temp Sensor TMP118B", "endpoint": "VDD", "power_consumption": 1.0, "input_source_id": "pmic_buck"},
         ]
     }
-    st.session_state.max_id = 26 # 保持 26 (最大編號)
+    st.session_state.max_id = 26 # 保持 26
 
     st.session_state.group_colors = {
         "SoC": "#FFC107", "Display Module": "#4CAF50", "AFE4510": "#F44336",
@@ -186,8 +132,9 @@ def initialize_data():
     component_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component']
     power_source_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
     all_comp_groups = set(n['group'] for n in component_nodes)
+    node_lookup = {(n['group'], n['endpoint']): n['id'] for n in component_nodes}
     
-    # --- 2. 先初始化 Power Source Modes (為了取得 "On" 電壓) ---
+    # --- 2. 【已修改】quiescent_current_mA -> quiescent_current_uA ---
     st.session_state.power_source_modes = {}
     for ps in power_source_nodes:
         base_note = ps.get("note", "") 
@@ -195,124 +142,127 @@ def initialize_data():
             "On": {
                 "output_voltage": ps['output_voltage'], 
                 "efficiency": ps['efficiency'], 
-                "quiescent_current_mA": ps['quiescent_current_mA'],
+                "quiescent_current_uA": ps['quiescent_current_uA'], # <-- 已重命名
                 "note": base_note
             },
             "Off": {
                 "output_voltage": 0.0, 
                 "efficiency": 0.0, 
-                "quiescent_current_mA": ps['quiescent_current_mA'],
+                "quiescent_current_uA": ps['quiescent_current_uA'], # <-- 已重命名
                 "note": "Device is off"
             }
         }
 
-    # --- 3. 建立 Operating Modes (儲存 "currents_mA") ---
+    # --- 3. 【已修改】建立 Operating Modes (儲存 "currents_uA") ---
     st.session_state.operating_modes = {}
     
-    def get_default_current(node):
+    def get_default_current_uA(node): # <-- 已重命名
         source_id = node.get('input_source_id')
         if not source_id: return 0.0
         source_voltage = st.session_state.power_source_modes.get(source_id, {}).get("On", {}).get("output_voltage", 1.0)
         if source_voltage == 0: return 0.0
-        return node.get('power_consumption', 0.0) / source_voltage
+        # (mW / V) * 1000 = uA
+        return (node.get('power_consumption', 0.0) / source_voltage) * 1000.0 # <-- 乘以 1000
+    
+    # --- 3A. 處理您貼上的表格資料 ---
+    user_table_data = [
+        # 您的表格數值 (1507, 1159 等) 現在被正確地當作 uA
+        {"Group": "Display Module", "Mode Name": "Active - 60Hz", "Endpoint": "AVDD", "Current (uA)": 1507, "Mode Note": "100% OPR, White, 800nits, NBM"},
+        {"Group": "Display Module", "Mode Name": "AOD - 15 Hz", "Endpoint": "AVDD", "Current (uA)": 1159, "Mode Note": "20% OPR, White, 50nits"},
+        {"Group": "Display Module", "Mode Name": "Active - 60Hz", "Endpoint": "IO_1V8", "Current (uA)": 1281, "Mode Note": "100% OPR, White, 800nits, NBM"},
+        {"Group": "Display Module", "Mode Name": "AOD - 15 Hz", "Endpoint": "IO_1V8", "Current (uA)": 861, "Mode Note": "20% OPR, White, 50nits"},
+        {"Group": "Display Module", "Mode Name": "AOD - 15 Hz", "Endpoint": "OVSS", "Current (uA)": 1, "Mode Note": "50 nits, 15Hz"},
+        {"Group": "Display Module", "Mode Name": "Idle mode", "Endpoint": "AVDD", "Current (uA)": 0, "Mode Note": "Display off"},
+        {"Group": "Display Module", "Mode Name": "Idle mode", "Endpoint": "IO_1V8", "Current (uA)": 0.1, "Mode Note": "Display off"},
+        {"Group": "Display Module", "Mode Name": "Idle mode", "Endpoint": "OVDD", "Current (uA)": 0, "Mode Note": "Display off"},
+        {"Group": "Display Module", "Mode Name": "Idle mode", "Endpoint": "OVSS", "Current (uA)": 0, "Mode Note": "Display off"},
+    ]
 
-    for group in all_comp_groups:
-        group_nodes = [n for n in component_nodes if n['group'] == group]
+    new_op_modes = defaultdict(dict)
+    for row in user_table_data:
+        group = row["Group"]
+        mode = row["Mode Name"]
+        endpoint = row["Endpoint"]
+        current = row["Current (uA)"] # <-- 讀取 uA
+        note = row.get("Mode Note", "")
         
-        if group == "Display Module":
-            default_currents = {n['id']: get_default_current(n) for n in group_nodes}
-            idle_currents = {n['id']: 0.0 for n in group_nodes}
-            st.session_state.operating_modes[group] = {
-                "AOD mode": {"currents_mA": copy.deepcopy(default_currents), "note": "50nits, OPR 20%, 15Hz refresh rate, 15Hz touch scan rate"},
-                "NBM (no finger)": {"currents_mA": copy.deepcopy(default_currents), "note": "200nits, OPR 50%, 60Hz refresh rate, 60Hz touch scan rate, no finger"},
-                "NBM (1 finger)": {"currents_mA": copy.deepcopy(default_currents), "note": "200nits, OPR 50%, 60Hz refresh rate, 120Hz touch scan rate, 1 finger"},
-                "Idle mode": {"currents_mA": idle_currents, "note": "Display off, touch 20Hz"}
+        node_id = node_lookup.get((group, endpoint))
+        if not node_id: continue
+        
+        if mode not in new_op_modes[group]:
+            all_node_ids_in_group = {n['id'] for n in component_nodes if n['group'] == group}
+            new_op_modes[group][mode] = {"currents_uA": {nid: 0.0 for nid in all_node_ids_in_group}, "note": note} # <-- 已重命名
+        
+        new_op_modes[group][mode]["currents_uA"][node_id] = current # <-- 存入 uA
+        if note:
+            new_op_modes[group][mode]["note"] = note
+    
+    st.session_state.operating_modes = dict(new_op_modes)
+    
+    # --- 3B. 為所有「其他」群組建立 "Default" 模式 ---
+    for group in all_comp_groups:
+        if group in st.session_state.operating_modes:
+            continue 
+        
+        group_nodes = [n for n in component_nodes if n['group'] == group]
+        default_currents = {n['id']: get_default_current_uA(n) for n in group_nodes} # <-- 已重命名
+        st.session_state.operating_modes[group] = {
+            "Default": {
+                "currents_uA": default_currents, # <-- 已重命名
+                "note": "Default operating mode."
             }
-        else:
-            default_currents = {n['id']: get_default_current(n) for n in group_nodes}
-            st.session_state.operating_modes[group] = {
-                "Default": {"currents_mA": default_currents, "note": "Default operating mode."}
-            }
-            
+        }
+
     st.session_state.component_group_notes = {group: "" for group in all_comp_groups}
 
-    # --- 4. 【已修改】建立 36 個新的 Use Cases (取代舊的 4 個) ---
-    
-    # 這是「通用預設值」
-    default_comp_settings = {group: {"Default": 100} for group in all_comp_groups}
+    # --- 4. 建立 Use Cases (保持不變) ---
+    default_comp_settings = {}
+    for group in all_comp_groups:
+        group_modes = st.session_state.operating_modes.get(group, {})
+        if "Default" in group_modes:
+            default_comp_settings[group] = {"Default": 100}
+        elif group_modes:
+            first_mode = list(group_modes.keys())[0]
+            default_ratio_dict = {mode: 0 for mode in group_modes}
+            default_ratio_dict[first_mode] = 100
+            default_comp_settings[group] = default_ratio_dict
+            
     default_ps_settings = {ps['id']: "On" for ps in power_source_nodes}
     default_use_case_settings = {"components": default_comp_settings, "power_sources": default_ps_settings}
     
-    # 您的 36 個 Use Case 名稱
     new_use_case_names = [
-        "On-wrist stationary, BLE connected",
-        "On-wrist stationary, BLE connected, Inductive button active",
-        "On-wrist, BLE very fast advertising",
-        "Off-wrist, BLE advertising",
-        "On-wrist active, BLE connected",
-        "Sync, BLE connected fast with payload",
-        "Sync, BLE connected fast no payload",
-        "Live data (steps + HR)",
-        "Incoming text notifications",
-        "Incoming call notifications",
-        "Alarm",
-        "Goal celebration",
-        "Quick View - Turn on display",
-        "Quick View - Turn on display - ECG",
-        "Double Tap - Turn on display",
-        "Button Press - Turn on display",
-        "Single Tap - View stats",
-        "Reminder to move - alert",
-        "Reminder to move - celebration",
-        "NFC Transit Pass Only",
-        "NFC Payment Transaction (NFC incremental without Display)",
-        "NFC Payment Transaction (Display + vibe without NFC)",
-        "6-Axis Accel Exercise",
-        "Inkling Incremental - logging data",
-        "Inkling Incremental - BLE sync",
-        "Vibe feedback incremental power on inductive button press",
-        "Touch Timeout UI active",
-        "On-wrist active, GPS",
-        "Lead Imp sEDA",
-        "Always On Display",
-        "NLP cloud processing",
-        "Display On",
-        "SNORE DETECT",
-        "VOICE/SOUND DETECT",
-        "KEYWORD DETECT",
+        "On-wrist stationary, BLE connected", "On-wrist stationary, BLE connected, Inductive button active",
+        "On-wrist, BLE very fast advertising", "Off-wrist, BLE advertising", "On-wrist active, BLE connected",
+        "Sync, BLE connected fast with payload", "Sync, BLE connected fast no payload", "Live data (steps + HR)",
+        "Incoming text notifications", "Incoming call notifications", "Alarm", "Goal celebration",
+        "Quick View - Turn on display", "Quick View - Turn on display - ECG", "Double Tap - Turn on display",
+        "Button Press - Turn on display", "Single Tap - View stats", "Reminder to move - alert",
+        "Reminder to move - celebration", "NFC Transit Pass Only", "NFC Payment Transaction (NFC incremental without Display)",
+        "NFC Payment Transaction (Display + vibe without NFC)", "6-Axis Accel Exercise", "Inkling Incremental - logging data",
+        "Inkling Incremental - BLE sync", "Vibe feedback incremental power on inductive button press",
+        "Touch Timeout UI active", "On-wrist active, GPS", "Lead Imp sEDA", "Always On Display",
+        "NLP cloud processing", "Display On", "SNORE DETECT", "VOICE/SOUND DETECT", "KEYWORD DETECT",
         "Touch LP Active Mode"
     ]
 
-    st.session_state.use_cases = {} # <-- 重命名
+    st.session_state.use_cases = {}
     for name in new_use_case_names:
-        # 建立一個新的 Use Case，並填入「通用預設值」
         st.session_state.use_cases[name] = copy.deepcopy(default_use_case_settings)
     
-    # 預設選中第一個 Use Case
-    st.session_state.active_use_case = new_use_case_names[0] # <-- 重命名
+    st.session_state.active_use_case = new_use_case_names[0]
     
-    # --- 5. User Profiles (保持不變，但現在是空的) ---
+    # --- 5. User Profiles (保持不變) ---
     st.session_state.battery_capacity_mAh = 64.5
-    
-    # 【已修改】舊的 User Profile 已失效，因為 Use Case 名稱對不上了
-    # 我們建立一個新的預設 User Profile
-    
-    # 建立一個包含所有新 Use Case 的空 Profile
     empty_profile = {name: 0 for name in new_use_case_names}
-    
-    # 建立一個範例 "Typical User"，您可以稍後自行調整
     typical_profile = copy.deepcopy(empty_profile)
-    typical_profile["On-wrist stationary, BLE connected"] = 10 # 假設 10 小時
-    typical_profile["On-wrist active, BLE connected"] = 6 # 假設 6 小時
-    typical_profile["Always On Display"] = 8 # 假設 8 小時
-    # (請注意：總時數應為 24)
-
+    typical_profile["On-wrist stationary, BLE connected"] = 10 
+    typical_profile["On-wrist active, BLE connected"] = 6
+    typical_profile["Always On Display"] = 8 
     st.session_state.user_profiles = {
         "Typical User": typical_profile,
         "Heavy User": copy.deepcopy(empty_profile),
         "Light User": copy.deepcopy(empty_profile)
     }
-    
     st.session_state.active_user_profile = "Typical User"
     
     st.session_state.initialized = True
@@ -326,7 +276,6 @@ initialize_data()
 def get_node_by_id(node_id):
     return next((n for n in st.session_state.power_tree_data['nodes'] if n['id'] == node_id), None)
 
-# 【已重命名】apply_device_mode -> apply_use_case
 def apply_use_case(use_case_name_override=None):
     if use_case_name_override:
         active_uc_name = use_case_name_override
@@ -338,7 +287,7 @@ def apply_use_case(use_case_name_override=None):
 
     active_uc = st.session_state.use_cases[active_uc_name]
     
-    # --- 步驟 1：設定所有電源的電壓 ---
+    # --- 【已修改】 quiescent_current_uA ---
     ps_settings = active_uc.get("power_sources", {})
     for node in st.session_state.power_tree_data['nodes']:
         if node['type'] == 'power_source':
@@ -349,14 +298,13 @@ def apply_use_case(use_case_name_override=None):
             mode_params = st.session_state.power_source_modes[node['id']][ps_mode_name]
             node['output_voltage'] = mode_params['output_voltage']
             node['efficiency'] = mode_params['efficiency']
-            node['quiescent_current_mA'] = mode_params['quiescent_current_mA']
+            node['quiescent_current_uA'] = mode_params['quiescent_current_uA'] # <-- 已重命名
 
-    # --- 步驟 2：計算所有元件的功率 (P = V * I) ---
+    # --- 【已修改】 讀取 uA 並除以 1000 ---
     comp_settings = active_uc.get("components", {}) 
     for node in st.session_state.power_tree_data['nodes']:
         if node['type'] == 'component':
             group = node['group']
-            
             group_ratios = comp_settings.get(group)
             
             if group_ratios:
@@ -369,20 +317,22 @@ def apply_use_case(use_case_name_override=None):
                 
                 for mode_name, ratio in group_ratios.items():
                     if ratio > 0:
-                        current_mA = st.session_state.operating_modes.get(group, {}).get(
+                        # 1. 讀取 uA
+                        current_uA = st.session_state.operating_modes.get(group, {}).get(
                             mode_name, {}
-                        ).get('currents_mA', {}).get(node['id'], 0.0)
+                        ).get('currents_uA', {}).get(node['id'], 0.0) # <-- 讀取 currents_uA
                         
-                        power_for_mode = current_voltage * current_mA
+                        # 2. 轉換為 mA (uA / 1000) 來計算 mW
+                        power_for_mode = current_voltage * (current_uA / 1000.0)
+                        
                         weighted_power += power_for_mode * (ratio / 100.0)
                 
                 node['power_consumption'] = weighted_power
             else:
                 node['power_consumption'] = 0.0
 
-# 【已重命名】
 def calculate_power(use_case_name_override=None):
-    apply_use_case(use_case_name_override) # <-- 已更新
+    apply_use_case(use_case_name_override)
     nodes = st.session_state.power_tree_data['nodes']
     
     memo = {}
@@ -414,7 +364,10 @@ def calculate_power(use_case_name_override=None):
         
         input_source = get_node_by_id(node.get('input_source_id'))
         input_voltage = input_source['output_voltage'] if input_source else node['output_voltage']
-        quiescent_power = input_voltage * node.get('quiescent_current_mA', 0.0)
+        
+        # --- 【已修改】 讀取 uA 並除以 1000 ---
+        quiescent_current_uA = node.get('quiescent_current_uA', 0.0)
+        quiescent_power = input_voltage * (quiescent_current_uA / 1000.0) # <-- 除以 1000
         
         total_input_power = input_power_from_load + quiescent_power
         node['input_power'] = total_input_power
@@ -428,7 +381,6 @@ def calculate_power(use_case_name_override=None):
 
 
 def get_vsys_referred_power_contributions(node_list):
-    # (此函數保持不變)
     def trace_power_to_root(load_mW, start_node_id):
         current_node = get_node_by_id(start_node_id)
         power = load_mW
@@ -438,6 +390,7 @@ def get_vsys_referred_power_contributions(node_list):
             power = power / efficiency if efficiency > 0 else 0
             current_node = parent_node
         return power
+
     contributions = []
     component_nodes = [n for n in node_list if n['type'] == 'component']
     for node in component_nodes:
@@ -446,10 +399,13 @@ def get_vsys_referred_power_contributions(node_list):
             vsys_referred_power = trace_power_to_root(component_load_mW, node.get('input_source_id'))
             label = node['group']
             contributions.append({"source": label, "power_mW": vsys_referred_power, "type": "Component Load"})
+    
     power_source_nodes = [n for n in node_list if n['type'] == 'power_source']
     for node in power_source_nodes:
-        quiescent_current_mA = node.get('quiescent_current_mA', 0.0)
-        if quiescent_current_mA > 0:
+        
+        # --- 【已修改】 讀取 uA 並除以 1000 ---
+        quiescent_current_uA = node.get('quiescent_current_uA', 0.0) # <-- 已重命名
+        if quiescent_current_uA > 0:
             parent_node = get_node_by_id(node.get('input_source_id'))
             if parent_node:
                 input_voltage = parent_node.get('output_voltage', 0.0)
@@ -457,11 +413,14 @@ def get_vsys_referred_power_contributions(node_list):
             else:
                 input_voltage = node.get('output_voltage', 0.0) 
                 parent_id_to_trace_from = None 
-            iq_load_mW = input_voltage * quiescent_current_mA
+            
+            iq_load_mW = input_voltage * (quiescent_current_uA / 1000.0) # <-- 除以 1000
             vsys_referred_iq_power = trace_power_to_root(iq_load_mW, parent_id_to_trace_from)
+
             if vsys_referred_iq_power > 0.0001:
                 label = f"{node['label']} (Iq Loss)"
                 contributions.append({"source": label, "power_mW": vsys_referred_iq_power, "type": "Quiescent Loss"})
+
         efficiency = node.get('efficiency', 1.0)
         if 0 < efficiency < 1.0:
             output_power_mW = node.get('output_power_total', 0.0)
@@ -471,6 +430,7 @@ def get_vsys_referred_power_contributions(node_list):
                 if vsys_referred_eff_loss > 0.0001:
                     label = f"{node['label']} (Efficiency Loss)"
                     contributions.append({"source": label, "power_mW": vsys_referred_eff_loss, "type": "Efficiency Loss"})
+
     if not contributions:
         return pd.DataFrame(columns=["source", "power_mW", "type"])
     df = pd.DataFrame(contributions)
@@ -485,11 +445,9 @@ def get_vsys_referred_power_contributions(node_list):
 
 
 # ===============================================================
-#  側邊欄 UI (Sidebar UI) - (保持不變)
+#  側邊欄 UI (Sidebar UI)
 # ===============================================================
-
 with st.sidebar:
-    
     components.html(
     """
     <script>
@@ -527,7 +485,7 @@ with st.sidebar:
             'group_colors': st.session_state.group_colors,
             'operating_modes': st.session_state.operating_modes,
             'power_source_modes': st.session_state.power_source_modes,
-            'use_cases': st.session_state.use_cases, # <-- 已重命名
+            'use_cases': st.session_state.use_cases,
             'battery_capacity_mAh': st.session_state.battery_capacity_mAh,
             'user_profiles': st.session_state.user_profiles,
             'component_group_notes': st.session_state.component_group_notes
@@ -559,12 +517,10 @@ with st.sidebar:
                     file_content = uploaded_file.getvalue().decode("utf-8")
                     loaded_data = json.loads(file_content)
                     
-                    # 【已修改】 檢查 'use_cases' (舊檔案可能為 'device_modes')
                     required_keys = ['power_tree_data', 'user_profiles']
                     if not (all(key in loaded_data for key in required_keys) and ('device_modes' in loaded_data or 'use_cases' in loaded_data)):
                         st.error("錯誤：上傳的檔案格式不正確或缺少必要的鍵。")
                     else:
-                        # 處理舊檔名
                         if 'device_modes' in loaded_data and 'use_cases' not in loaded_data:
                             loaded_data['use_cases'] = loaded_data.pop('device_modes')
                             
@@ -579,24 +535,18 @@ with st.sidebar:
                 except Exception as e:
                     st.error(f"讀取檔案時發生錯誤: {e}")
 
-# === 側邊欄結束 ===
-
-
 # ===============================================================
 #  主內容頁面 (Main Content)
 # ===============================================================
 
-# 【已重命名】
-tabs = st.tabs(["Power Tree", "Component Mode Management", "Power Source Mode Management", "Use Case Management", "Battery Life Estimation"])
+tabs = st.tabs(["Power Tree", "Component Management", "Power Source Management", "Use Case Management", "Battery Life Estimation"])
 
-calculate_power(st.session_state.active_use_case) # <-- 已更新
+calculate_power(st.session_state.active_use_case)
 
 with tabs[0]:
     st.header("Power Consumption Analysis")
     
-    # --- 【START：已修改為「直接顯示」的下拉選單】 ---
-    
-    st.subheader("Use Case Selection") # <--- 加回標題
+    st.subheader("Use Case Selection")
     
     use_case_list = list(st.session_state.use_cases.keys())
     active_use_case = st.session_state.get('active_use_case', use_case_list[0])
@@ -605,24 +555,24 @@ with tabs[0]:
     except ValueError:
         current_index = 0
 
-    # 直接顯示 st.selectbox
     selected_use_case = st.selectbox(
         "Select Use Case to Display", 
         options=use_case_list, 
         index=current_index, 
         key="use_case_selector", 
-        label_visibility="collapsed" # 隱藏標籤，因為上面有 subheader
+        label_visibility="collapsed"
     )
     
     if st.session_state.active_use_case != selected_use_case:
         st.session_state.active_use_case = selected_use_case
         st.rerun()
-    # --- 【END：修改】 ---
     
     power_placeholder = st.empty()
     current_placeholder = st.empty()
     
-    with st.expander("Show / Hide Power Tree Visualizer", expanded=True):
+    # --- 【已修改】 預設改為收折 ---
+    with st.expander("Show / Hide Power Tree Visualizer", expanded=False):
+    # --- 【修改結束】 ---
         st.markdown("### Power Tree")
         graph_placeholder = st.empty()
     
@@ -656,18 +606,23 @@ with tabs[0]:
         base = alt.Chart(df_chart).encode(
            theta=alt.Theta("power_mW:Q", stack=True)
         ).properties(
-           title="Breakdown of Total Vsys Power Draw"
+           title="Breakdown of Total Vsys Power Draw",
+           height=500
         )
-        pie = base.mark_arc(outerRadius=160, innerRadius=0).encode(
+        
+        # --- 【已修改】 再次放大圓餅圖 ---
+        pie = base.mark_arc(outerRadius=200, innerRadius=0).encode(
             color=alt.Color("source:N", title="Power Source"),
             order=alt.Order("percentage:Q", sort="descending"),
             tooltip=["source", alt.Tooltip("power_mW:Q", format=".2f"), alt.Tooltip("percentage:Q", format=".1%")]
         )
-        text = base.mark_text(radius=180).encode(
+        text = base.mark_text(radius=220).encode(
             text=alt.Text("percentage:Q", format=".1%"),
             order=alt.Order("percentage:Q", sort="descending"),
             color=alt.value(pie_text_color)
         )
+        # --- 【修改結束】 ---
+        
         chart = pie + text
         st.altair_chart(chart, use_container_width=True)
         
@@ -685,9 +640,9 @@ with tabs[0]:
         st.info("No power consumption data to display for the pie chart.")
         
 
-# --- 【tabs[1]】(Component Mode Management) (保持不變) ---
+# --- 【tabs[1]】(【已修改】標籤為 uA，儲存 uA) ---
 with tabs[1]:
-    st.header("Component Mode Management")
+    st.header("Component Management")
     all_groups = sorted(list(set(n['group'] for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component')))
     
     if not all_groups:
@@ -728,9 +683,9 @@ with tabs[1]:
                         if widget_key in st.session_state:
                             current_val_for_widget = st.session_state[widget_key]
                         else:
-                            current_val_for_widget = float(mode_data.get('currents_mA', {}).get(node['id'], 0.0))
+                            current_val_for_widget = float(mode_data.get('currents_uA', {}).get(node['id'], 0.0))
                         
-                        new_label_text = f"Current (mA) - {node['endpoint']} ({source_label})"
+                        new_label_text = f"Current (uA) - {node['endpoint']} {source_label}"
                         
                         st.number_input(
                             new_label_text,
@@ -740,7 +695,7 @@ with tabs[1]:
                             format="%.3f"
                         )
                         
-                        mode_data['currents_mA'][node['id']] = st.session_state[widget_key]
+                        mode_data['currents_uA'][node['id']] = st.session_state[widget_key]
 
                     st.markdown("---")
                     mode_data['note'] = st.text_area("Mode Note", value=mode_data.get("note", ""), key=f"note_{selected_group}_{mode_name}")
@@ -752,27 +707,30 @@ with tabs[1]:
                         if st.button("Rename", key=f"rename_btn_{selected_group}_{mode_name}"):
                             if new_name and new_name != mode_name and new_name not in st.session_state.operating_modes[selected_group]:
                                 st.session_state.operating_modes[selected_group][new_name] = st.session_state.operating_modes[selected_group].pop(mode_name)
-                                for uc in st.session_state.use_cases.values(): # <-- 已重命名
+                                for uc in st.session_state.use_cases.values():
                                     group_ratios = uc["components"].get(selected_group) 
                                     if group_ratios and mode_name in group_ratios:
                                         group_ratios[new_name] = group_ratios.pop(mode_name)
                                 st.rerun()
 
                     is_default_only_mode = (mode_name == "Default" and num_modes == 1)
-                    is_display_module_default = (selected_group == "Display Module" and mode_name in ["AOD mode", "NBM (no finger)", "NBM (1 finger)", "Idle mode"])
+                    # (已更新) 擴展 Display Module 的基礎模式列表
+                    display_base_modes = ["AOD mode", "NBM (no finger)", "NBM (1 finger)", "Idle mode", "Active - 60Hz", "AOD - 15 Hz"]
+                    is_display_module_default = (selected_group == "Display Module" and mode_name in display_base_modes)
+
                     if not is_default_only_mode and mode_name != "Default" and not is_display_module_default:
                         with st.expander("🗑️ 刪除此模式"):
                             st.warning(f"此操作將永久刪除 '{mode_name}' 模式，無法復原。")
                             if st.button(f"確認永久刪除 '{mode_name}'", key=f"delete_confirm_{selected_group}_{mode_name}", type="primary"):
                                 fallback_mode = "Default" if "Default" in st.session_state.operating_modes[selected_group] else list(st.session_state.operating_modes[selected_group].keys())[0]
-                                for uc in st.session_state.use_cases.values(): # <-- 已重命名
+                                for uc in st.session_state.use_cases.values():
                                     group_ratios = uc["components"].get(selected_group)
                                     if group_ratios and mode_name in group_ratios:
                                         deleted_ratio = group_ratios.pop(mode_name)
                                         group_ratios[fallback_mode] = group_ratios.get(fallback_mode, 0) + deleted_ratio
                                 del st.session_state.operating_modes[selected_group][mode_name]
                                 st.rerun()
-                    elif (is_display_module_default or mode_name == "Default") and not is_default_only_mode:
+                    elif (is_display_module_default or (mode_name == "Default" and not is_default_only_mode)) :
                             with st.expander("🗑️ 刪除此模式", expanded=False):
                                 st.info(f"無法刪除基礎模式 ('{mode_name}')。")
         
@@ -781,7 +739,7 @@ with tabs[1]:
             if st.button("Add Mode", key=f"add_mode_btn_{selected_group}", type="secondary"):
                 if new_mode_name and new_mode_name not in st.session_state.operating_modes.get(selected_group, {}):
                     st.session_state.operating_modes.setdefault(selected_group, {})[new_mode_name] = {
-                        "currents_mA": {n['id']: 0.0 for n in st.session_state.power_tree_data['nodes'] 
+                        "currents_uA": {n['id']: 0.0 for n in st.session_state.power_tree_data['nodes'] 
                                    if n['type'] == 'component' and n['group'] == selected_group},
                         "note": ""
                     }
@@ -801,30 +759,42 @@ with tabs[1]:
             power_sources_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
             power_source_options = {n['id']: n['label'] for n in power_sources_nodes}
             selected_ps_id = st.selectbox("連接到哪個電源？", options=power_source_options.keys(), format_func=lambda x: power_source_options.get(x, "N/A"))
+            
             source_label_new = power_source_options.get(selected_ps_id, 'N/A')
-            new_current = st.number_input(f"'Default' 模式電流 (mA) ({source_label_new})", min_value=0.0, value=1.0, format="%.3f")
+            new_current = st.number_input(
+                f"'Default' 模式電流 (uA) ({source_label_new})", 
+                min_value=0.0, 
+                value=1000.0, 
+                format="%.3f"
+            )
+
             submitted = st.form_submit_button("確認新增元件")
             
             if submitted:
                 new_id = f"node_{st.session_state.max_id + 1}"
                 new_node_data = {"id": new_id, "type": "component"}
                 new_node_data.update({"group": new_group, "endpoint": new_endpoint, "power_consumption": 0.0, "input_source_id": selected_ps_id})
+                
                 if new_group not in st.session_state.operating_modes:
-                    st.session_state.operating_modes[new_group] = {"Default": {"currents_mA": {}, "note": "Default operating mode."}}
+                    st.session_state.operating_modes[new_group] = {"Default": {"currents_uA": {}, "note": "Default operating mode."}}
                     if 'component_group_notes' not in st.session_state:
                          st.session_state.component_group_notes = {}
                     st.session_state.component_group_notes[new_group] = ""
-                st.session_state.operating_modes[new_group]["Default"]["currents_mA"][new_id] = new_current
+
+                st.session_state.operating_modes[new_group]["Default"]["currents_uA"][new_id] = new_current
+                
                 if new_group not in st.session_state.group_colors:
                     st.session_state.group_colors[new_group] = next(DEFAULT_COLORS)
-                for uc in st.session_state.use_cases.values(): # <-- 已重命名
+                for uc in st.session_state.use_cases.values():
                     if new_group not in uc["components"]:
                         uc["components"][new_group] = {"Default": 100}
+                
                 st.session_state.power_tree_data['nodes'].append(new_node_data)
                 st.session_state.max_id += 1
                 st.success(f"已新增元件: {new_group} - {new_endpoint}")
                 st.rerun()
 
+    # --- 【START：已簡化的「編輯元件」區塊】 ---
     with st.expander("✏️ Edit / Delete Component"):
         nodes_list = st.session_state.power_tree_data['nodes']
         def format_node_for_display_comp(node_id):
@@ -843,52 +813,48 @@ with tabs[1]:
                 original_group = node_to_edit['group']
                 edited_group = st.text_input("群組名稱", original_group, key=f"edit_group_{selected_node_id}")
                 edited_endpoint = st.text_input("端點名稱", node_to_edit['endpoint'], key=f"edit_endpoint_{selected_node_id}")
+                
                 power_sources = [n for n in nodes_list if n['type'] == 'power_source']
                 ps_options = {n['id']: n['label'] for n in power_sources}
                 current_source_id = node_to_edit.get('input_source_id')
                 ps_ids = list(ps_options.keys())
                 default_index = ps_ids.index(current_source_id) if current_source_id in ps_ids else 0
                 selected_ps_id_edit = st.selectbox("連接到哪個電源？", options=ps_ids, format_func=ps_options.get, index=default_index, key=f"edit_comp_source_{selected_node_id}")
-                source_label = "N/A"
-                if selected_ps_id_edit:
-                    source_node = get_node_by_id(selected_ps_id_edit)
-                    if source_node:
-                        source_label = source_node.get('label', selected_ps_id_edit)
-                widget_key_edit = f"edit_current_{selected_node_id}"
-                if widget_key_edit in st.session_state:
-                    current_val_for_widget = st.session_state[widget_key_edit]
-                else:
-                    current_val_for_widget = st.session_state.operating_modes.get(original_group, {}).get("Default", {}).get("currents_mA", {}).get(selected_node_id, 0.0)
-                new_label_text = f"'Default' 模式電流 (mA) ({source_label})"
-                st.number_input(
-                    new_label_text,
-                    min_value=0.0,
-                    value=current_val_for_widget,
-                    key=widget_key_edit,
-                    format="%.3f"
-                )
-                edited_default_current = st.session_state[widget_key_edit]
+                
+                # --- 【已移除】「'Default' 模式電流」的相關邏輯 ---
 
                 if st.button("更新元件", key=f"update_comp_{selected_node_id}"):
                     node_to_edit['endpoint'] = edited_endpoint
                     node_to_edit['input_source_id'] = selected_ps_id_edit
-                    st.session_state.operating_modes[original_group]["Default"]["currents_mA"][selected_node_id] = edited_default_current 
+                    
+                    # --- 【已移除】更新 Default 電流的邏輯 ---
+
                     if original_group != edited_group:
                         if edited_group not in st.session_state.operating_modes:
-                            st.session_state.operating_modes[edited_group] = {"Default": {"currents_mA": {}, "note": "Default operating mode."}}
+                            st.session_state.operating_modes[edited_group] = {"Default": {"currents_uA": {}, "note": "Default operating mode."}}
                             st.session_state.group_colors[edited_group] = next(DEFAULT_COLORS)
-                        current_val = st.session_state.operating_modes[original_group]["Default"]["currents_mA"].pop(selected_node_id)
-                        st.session_state.operating_modes[edited_group]["Default"]["currents_mA"][selected_node_id] = current_val
-                        for uc in st.session_state.use_cases.values(): # <-- 已重命名
-                            if original_group in uc["components"]:
-                                uc["components"][edited_group] = uc["components"].pop(original_group)
+                        
+                        # 將所有模式的電流資料從舊群組轉移到新群組
+                        for op_mode in st.session_state.operating_modes.get(original_group, {}).values():
+                            current_val = op_mode["currents_uA"].pop(selected_node_id, None)
+                            if current_val is not None:
+                                # 找到新群組的對應模式 (假設名稱相同)
+                                if op_mode_name in st.session_state.operating_modes.get(edited_group, {}):
+                                    st.session_state.operating_modes[edited_group][op_mode_name]["currents_uA"][selected_node_id] = current_val
+                                else:
+                                    # 如果新群組沒有這個模式，加到 Default
+                                    st.session_state.operating_modes[edited_group]["Default"]["currents_uA"][selected_node_id] = current_val
+
+                        for dm in st.session_state.use_cases.values():
+                            if original_group in dm["components"]:
+                                dm["components"][edited_group] = dm["components"].pop(original_group)
                         node_to_edit['group'] = edited_group
-                    if widget_key_edit in st.session_state:
-                        del st.session_state[widget_key_edit]
+                    
                     st.success("已更新元件")
                     st.rerun()
         else:
             st.info("沒有可編輯的元件。")
+    # --- 【END：簡化結束】 ---
 
     with st.expander("🎨 Group Color Management"):
         all_groups_for_color = sorted(list(set(n['group'] for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component')))
@@ -897,7 +863,6 @@ with tabs[1]:
                 f"'{group}' 群組顏色", st.session_state.group_colors.get(group, '#CCCCCC'), key=f"color_{group}"
             )
             
-    # --- 【新增「複製元件群組」功能】 ---
     with st.expander("🖨️ Clone Component Group"):
         
         all_groups_list = sorted(list(set(n['group'] for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component')))
@@ -946,19 +911,19 @@ with tabs[1]:
                         
                         for mode_name, mode_data in modes_to_clone.items():
                             new_currents_dict = {}
-                            old_currents_dict = mode_data.get("currents_mA", {})
+                            old_currents_dict = mode_data.get("currents_uA", {})
                             
                             for old_node_id, current_val in old_currents_dict.items():
                                 new_node_id = node_id_map.get(old_node_id)
                                 if new_node_id:
                                     new_currents_dict[new_node_id] = current_val
                             
-                            mode_data["currents_mA"] = new_currents_dict
+                            mode_data["currents_uA"] = new_currents_dict
                             new_op_modes[mode_name] = mode_data
                         
                         st.session_state.operating_modes[new_group_name] = new_op_modes
 
-                        for uc in st.session_state.use_cases.values(): # <-- 已重命名
+                        for uc in st.session_state.use_cases.values():
                             if new_group_name not in uc["components"]:
                                 uc["components"][new_group_name] = {"Default": 100}
 
@@ -971,9 +936,9 @@ with tabs[1]:
                     except Exception as e:
                         st.error(f"An error occurred during cloning: {e}")
 
-# --- 【tabs[2]】(Power Source Mode Management) (保持不變) ---
+# --- 【tabs[2]】(【已修改】標籤為 uA) ---
 with tabs[2]:
-    st.header("Power Source Mode Management")
+    st.header("Power Source Management")
     all_power_sources = sorted([n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source'], key=lambda x: x['label'])
     
     if not all_power_sources:
@@ -996,6 +961,7 @@ with tabs[2]:
         
         for mode_name, params in list(st.session_state.power_source_modes.get(selected_ps_id, {}).items()):
             if 'note' not in params: params['note'] = ""
+            if 'quiescent_current_uA' not in params: params['quiescent_current_uA'] = 0.0 # 相容舊檔
             
             with st.expander(f"{mode_name}", expanded=False):
                 
@@ -1008,9 +974,9 @@ with tabs[2]:
                     st.text_input("Output Voltage (V)", value="0.0 (Off)", disabled=True, key=key_v)
                     st.text_input("Efficiency (%)", value="N/A", disabled=True, key=key_eff)
                     
-                    current_iq = params['quiescent_current_mA']
-                    st.number_input("Quiescent Current (mA)", min_value=0.0, value=current_iq, key=key_iq, format="%.3f")
-                    params['quiescent_current_mA'] = st.session_state[key_iq]
+                    current_iq = params['quiescent_current_uA'] # <-- 已修改
+                    st.number_input("Quiescent Current (uA)", min_value=0.0, value=current_iq, key=key_iq, format="%.3f") # <-- 已修改
+                    params['quiescent_current_uA'] = st.session_state[key_iq] # <-- 已修改
 
                 else:
                     current_v = params['output_voltage']
@@ -1019,12 +985,12 @@ with tabs[2]:
                     current_eff = params['efficiency'] * 100.0
                     st.number_input("Efficiency (%)", min_value=0.0, max_value=100.0, value=current_eff, key=key_eff)
 
-                    current_iq = params['quiescent_current_mA']
-                    st.number_input("Quiescent Current (mA)", min_value=0.0, value=current_iq, key=key_iq, format="%.3f")
+                    current_iq = params['quiescent_current_uA'] # <-- 已修改
+                    st.number_input("Quiescent Current (uA)", min_value=0.0, value=current_iq, key=key_iq, format="%.3f") # <-- 已修改
 
                     params['output_voltage'] = st.session_state[key_v]
                     params['efficiency'] = st.session_state[key_eff] / 100.0
-                    params['quiescent_current_mA'] = st.session_state[key_iq]
+                    params['quiescent_current_uA'] = st.session_state[key_iq] # <-- 已修改
                 
                 current_note_val = params.get("note", "")
                 st.text_area("Mode Note", value=current_note_val, key=key_note)
@@ -1038,7 +1004,7 @@ with tabs[2]:
                     if st.button("Rename", key=f"rename_ps_btn_{selected_ps_id}_{mode_name}"):
                         if new_name and new_name != mode_name and new_name not in st.session_state.power_source_modes[selected_ps_id]:
                             st.session_state.power_source_modes[selected_ps_id][new_name] = st.session_state.power_source_modes[selected_ps_id].pop(mode_name)
-                            for uc in st.session_state.use_cases.values(): # <-- 已重命名
+                            for uc in st.session_state.use_cases.values():
                                 if uc.get("power_sources", {}).get(selected_ps_id) == mode_name:
                                     uc["power_sources"][selected_ps_id] = new_name
                             
@@ -1052,7 +1018,7 @@ with tabs[2]:
                         st.warning(f"此操作將永久刪除 '{mode_name}' 模式，無法復原。")
                         if st.button(f"確認永久刪除 '{mode_name}'", key=f"del_psm_confirm_{selected_ps_id}_{mode_name}", type="primary"):
                             fallback_mode = "On" if "On" in st.session_state.power_source_modes[selected_ps_id] else list(st.session_state.power_source_modes[selected_ps_id].keys())[0]
-                            for uc in st.session_state.use_cases.values(): # <-- 已重命名
+                            for uc in st.session_state.use_cases.values():
                                 if uc.get("power_sources", {}).get(selected_ps_id) == mode_name:
                                     uc["power_sources"][selected_ps_id] = fallback_mode
                             del st.session_state.power_source_modes[selected_ps_id][mode_name]
@@ -1069,7 +1035,7 @@ with tabs[2]:
                     st.session_state.power_source_modes.setdefault(selected_ps_id, {})[new_ps_mode_name] = {
                         "output_voltage": 0.0, 
                         "efficiency": 0.9, 
-                        "quiescent_current_mA": 0.0,
+                        "quiescent_current_uA": 0.0, # <-- 已修改
                         "note": ""
                     }
                     st.rerun()
@@ -1090,7 +1056,7 @@ with tabs[2]:
             new_input_source_id = st.selectbox("連接到哪個上游電源？", options=ps_options_with_none.keys(), format_func=lambda x: ps_options_with_none.get(x, "N/A"))
             new_efficiency_percent = st.number_input("'On' 模式效率 (%)", 0.0, 100.0, 90.0, step=1.0)
             new_output_voltage = st.number_input("'On' 模式輸出電壓 (V)", min_value=0.0, value=1.8)
-            new_quiescent_current = st.number_input("靜態電流 (mA)", min_value=0.0, value=0.01, format="%.3f")
+            new_quiescent_current = st.number_input("靜態電流 (uA)", min_value=0.0, value=10.0, format="%.3f") # <-- 已修改
             
             submitted = st.form_submit_button("確認新增電源")
 
@@ -1099,14 +1065,14 @@ with tabs[2]:
                 new_node_data = {"id": new_id, "type": "power_source"}
                 new_node_data.update({
                     "label": new_label, "efficiency": new_efficiency_percent / 100.0, "output_voltage": new_output_voltage,
-                    "quiescent_current_mA": new_quiescent_current, "input_source_id": new_input_source_id if new_input_source_id else None
+                    "quiescent_current_uA": new_quiescent_current, "input_source_id": new_input_source_id if new_input_source_id else None # <-- 已修改
                 })
                 base_note = new_node_data.get("note", "")
                 st.session_state.power_source_modes[new_id] = {
-                    "On": {"output_voltage": new_output_voltage, "efficiency": new_efficiency_percent / 100.0, "quiescent_current_mA": new_quiescent_current, "note": base_note},
-                    "Off": {"output_voltage": 0.0, "efficiency": 0.0, "quiescent_current_mA": new_quiescent_current, "note": "Device is off"}
+                    "On": {"output_voltage": new_output_voltage, "efficiency": new_efficiency_percent / 100.0, "quiescent_current_uA": new_quiescent_current, "note": base_note}, # <-- 已修改
+                    "Off": {"output_voltage": 0.0, "efficiency": 0.0, "quiescent_current_uA": new_quiescent_current, "note": "Device is off"} # <-- 已修改
                 }
-                for uc in st.session_state.use_cases.values(): # <-- 已重命名
+                for uc in st.session_state.use_cases.values():
                     if new_id not in uc["power_sources"]:
                         uc["power_sources"][new_id] = "On"
                 
@@ -1154,8 +1120,8 @@ with tabs[2]:
                 st.number_input("'On' 模式輸出電壓 (V)", 0.0, key=key_edit_v)
 
                 if key_edit_iq not in st.session_state:
-                    st.session_state[key_edit_iq] = float(on_mode_params.get('quiescent_current_mA', 0))
-                st.number_input("靜態電流 (mA)", min_value=0.0, format="%.3f", key=key_edit_iq)
+                    st.session_state[key_edit_iq] = float(on_mode_params.get('quiescent_current_uA', 0)) # <-- 已修改
+                st.number_input("靜態電流 (uA)", min_value=0.0, format="%.3f", key=key_edit_iq) # <-- 已修改
 
                 if st.button("更新電源", key=f"update_ps_{selected_node_id}"):
                     node_to_edit['label'] = edited_label
@@ -1163,18 +1129,18 @@ with tabs[2]:
                     
                     edited_output_voltage = st.session_state[key_edit_v]
                     edited_efficiency_percent = st.session_state[key_edit_eff]
-                    edited_quiescent_current = st.session_state[key_edit_iq]
+                    edited_quiescent_current = st.session_state[key_edit_iq] # <-- 已修改
 
                     existing_on_note = st.session_state.power_source_modes.get(selected_node_id, {}).get("On", {}).get("note", "")
                     st.session_state.power_source_modes[selected_node_id]["On"] = {
                         "output_voltage": edited_output_voltage,
                         "efficiency": edited_efficiency_percent / 100.0,
-                        "quiescent_current_mA": edited_quiescent_current,
+                        "quiescent_current_uA": edited_quiescent_current, # <-- 已修改
                         "note": existing_on_note
                     }
                     
                     if "Off" in st.session_state.power_source_modes[selected_node_id]:
-                        st.session_state.power_source_modes[selected_node_id]["Off"]["quiescent_current_mA"] = edited_quiescent_current
+                        st.session_state.power_source_modes[selected_node_id]["Off"]["quiescent_current_uA"] = edited_quiescent_current # <-- 已修改
                     
                     del st.session_state[key_edit_v]
                     del st.session_state[key_edit_eff]
@@ -1185,7 +1151,7 @@ with tabs[2]:
         else:
             st.info("沒有可編輯的電源。")
 
-# --- 【tabs[3]】(已重命名為 Use Case Management) ---
+# --- 【tabs[3]】(Use Case Management) (保持不變) ---
 with tabs[3]:
     st.header("Use Case Management")
     
@@ -1193,10 +1159,7 @@ with tabs[3]:
     num_use_cases = len(st.session_state.use_cases)
     
     for uc_name, uc_settings in list(st.session_state.use_cases.items()):
-        
-        # --- 【已修改】 移除 "Use Case: " 字樣 ---
         with st.expander(f"{uc_name}", expanded=False):
-        # --- 【修改結束】 ---
             
             st.markdown("#### Component Settings")
             all_comp_groups = sorted(list(st.session_state.operating_modes.keys()))
@@ -1205,7 +1168,7 @@ with tabs[3]:
                 
                 group_modes = list(st.session_state.operating_modes.get(group, {}).keys())
                 if not group_modes:
-                    st.warning(f"'{group}' 尚未在 tabs[1] 中定義任何 Component Mode。")
+                    st.warning(f"'{group}' 尚未在 ] 中定義任何 Component Mode。")
                     continue
                 
                 current_ratios = uc_settings.get("components", {}).get(group, {})
@@ -1231,8 +1194,6 @@ with tabs[3]:
                                 )
                             with sub_col3:
                                 st.markdown("<p style='padding-top: 8px;'>%</p>", unsafe_allow_html=True)
-                    
-                    # (100% 總和檢查已被移除)
                     
                     uc_settings["components"][group] = current_ratios
 
@@ -1331,7 +1292,7 @@ with tabs[3]:
             else:
                 st.error(f"Use Case '{new_uc_name}' 已存在。")
 
-# --- 【tabs[4]】(已重命名為 Use Case) ---
+# --- 【tabs[4]】(【已修改】顯示 uA) ---
 with tabs[4]:
     st.header("Battery Life Estimation")
 
@@ -1339,11 +1300,8 @@ with tabs[4]:
     st.session_state.battery_capacity_mAh = st.session_state.battery_capacity_input
 
     st.markdown("---")
-    st.subheader("Estimation Results per Profile") # <-- 已移除 "Live"
+    st.subheader("Estimation Results per Profile")
 
-    # --- 【已移除】 Pinned Comparison Results 區塊 ---
-
-    # (計算邏輯保持不變)
     power_per_use_case = {uc: calculate_power(use_case_name_override=uc) for uc in st.session_state.use_cases}
     vsys_node = get_node_by_id("battery")
     vsys_voltage = vsys_node['output_voltage'] if vsys_node else 3.85
@@ -1363,15 +1321,14 @@ with tabs[4]:
             battery_life_days = 0 
             life_display_str = "Infinite"
 
-        # --- 【已還原】 改回原本的 3 欄佈局 (移除 Pin 按鈕) ---
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric(label=f"**{profile_name}**", value=life_display_str)
         with col2:
             st.metric(label="Avg. Power", value=f"{avg_power_mW:.2f} mW")
         with col3:
-            st.metric(label="Avg. Current", value=f"{avg_current_mA:.3f} mA")
-        # --- 【修改結束】 ---
+            # 【已修改】顯示 uA，並顯示到整數
+            st.metric(label="Avg. Current", value=f"{avg_current_mA * 1000.0:.0f} uA")
             
         with st.expander(f"編輯 '{profile_name}' 設定檔", expanded=False):
             
@@ -1417,15 +1374,16 @@ with tabs[4]:
 # ---
 # 在所有狀態更新後，執行最終的計算與渲染
 # ---
-total_power = calculate_power(st.session_state.active_use_case) # <-- 已重命名
+total_power = calculate_power(st.session_state.active_use_case)
 
 power_placeholder.write(f"<strong>Total System Power:</strong> {total_power:.2f} mW", unsafe_allow_html=True)
 vsys_node = get_node_by_id("battery")
 if vsys_node and vsys_node.get('output_voltage', 0) > 0:
-    current = total_power / vsys_node['output_voltage']
-    current_placeholder.write(f"<strong>Total Vsys Current:</strong> {current:.2f} mA", unsafe_allow_html=True)
+    current_mA = total_power / vsys_node['output_voltage']
+    # 【已修改】顯示 uA，並顯示到整數
+    current_placeholder.write(f"<strong>Total Vsys Current:</strong> {current_mA * 1000.0:.0f} uA", unsafe_allow_html=True)
 
-# (繪製 Power Tree 的 graphviz 邏輯保持不變)
+# 繪製 Power Tree
 if st.session_state.theme == "Dark":
     graph_bgcolor = "black"
     edge_color = "white"
@@ -1446,9 +1404,12 @@ for node in [n for n in nodes if n['type'] == 'power_source']:
     pin_str = f"Pin: {node.get('input_power', 0):.2f}mW" if node.get('input_source_id') else "Pin: N/A"
     pout_str = f"Pout: {node.get('output_power_total', 0):.2f}mW"
     eff_str = f"eff: {node.get('efficiency', 1.0) * 100:.0f}%" if node.get('efficiency', 0) > 0 else "eff: N/A"
-    iq_str = f"Iq: {node.get('quiescent_current_mA', 0.0):.2f}mA"
+    # 【已修改】顯示 uA
+    iq_str = f"Iq: {node.get('quiescent_current_uA', 0.0):.1f}uA"
+    
     pin_pout_str = f'{pin_str} &nbsp;|&nbsp; {pout_str}'
     details_html = f"{pin_pout_str}<BR/>{eff_str}<BR/>{iq_str}"
+    
     table = (f'<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="{table_border_color}">'
              f'<TR><TD BGCOLOR="#2196F3" ALIGN="CENTER"><B><FONT COLOR="white">{node["label"]}</FONT></B></TD></TR>'
              f'<TR><TD ALIGN="CENTER" BGCOLOR="#FFFFFF"><FONT COLOR="black">{details_html}</FONT></TD></TR>'
@@ -1475,8 +1436,9 @@ for node in nodes:
         if source:
             voltage = source.get('output_voltage', 0)
             power = node.get('input_power', 0) if node['type'] == 'power_source' else node.get('power_consumption', 0)
-            current = power / voltage if voltage > 0 else 0
-            edge_label = f"{voltage:.2f} V\n{current:.2f} mA"
+            current_mA = power / voltage if voltage > 0 else 0
+            # 【已修改】邊線顯示 uA
+            edge_label = f"{voltage:.2f} V\n{current_mA * 1000.0:.1f} uA"
             dot.edge(node['input_source_id'], node['id'], label=edge_label, tailport='e', headport='w')
 
 graph_placeholder.graphviz_chart(dot)
