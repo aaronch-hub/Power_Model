@@ -942,10 +942,10 @@ with tabs[2]:
     all_power_sources = sorted([n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source'], key=lambda x: x['label'])
     
     if not all_power_sources:
-        st.info("請先新增電源區塊。")
+        st.info("Please Add The Power Source")
     else:
         ps_options = {ps['id']: ps['label'] for ps in all_power_sources}
-        selected_ps_id = st.selectbox("選擇要管理的電源", options=ps_options.keys(), format_func=ps_options.get, key="psm_ps_selector")
+        selected_ps_id = st.selectbox("Power Source Selection", options=ps_options.keys(), format_func=ps_options.get, key="psm_ps_selector")
         
         base_node = get_node_by_id(selected_ps_id)
         if base_node: 
