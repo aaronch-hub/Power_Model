@@ -72,7 +72,7 @@ DEFAULT_COLORS = cycle(["#4CAF50", "#FF5722", "#607D8B", "#E91E63", "#9C27B0", "
 def initialize_data():
     """初始化所有 session_state 數據"""
     if 'initialized' in st.session_state:
-        # (防呆檢查... 保持不變)
+        # (防呆檢查)
         if 'component_group_notes' not in st.session_state:
             all_comp_groups = set(n['group'] for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component')
             st.session_state.component_group_notes = {group: "" for group in all_comp_groups}
@@ -80,18 +80,24 @@ def initialize_data():
             for mode_name, params in modes.items():
                 if 'note' not in params:
                     st.session_state.power_source_modes[ps_id][mode_name]['note'] = ""
+        
+        # --- 【新增】 檢查 battery_note ---
+        if 'battery_note' not in st.session_state:
+            st.session_state.battery_note = ""
+        # --- 【新增結束】 ---
+            
         return
 
-    # --- 1. 節點定義 (【已修改】quiescent_current_mA -> quiescent_current_uA) ---
+    # --- 1. 節點定義 (保持不變) ---
     st.session_state.power_tree_data = {
         "nodes": [
             # Power Sources
             {"id": "battery", "label": "Vsys", "type": "power_source", "output_voltage": 3.85, "efficiency": 1.0, "quiescent_current_uA": 0.0, "input_source_id": None},
-            {"id": "vbb", "label": "VBB", "type": "power_source", "output_voltage": 3.9, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "battery"}, # 0.01mA -> 10uA
-            {"id": "pmic_buck", "label": "PMIC (BUCK_1V8)", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.95, "quiescent_current_uA": 50.0, "input_source_id": "battery"}, # 0.05mA -> 50uA
-            {"id": "pmic_ldo1", "label": "PMIC (LDO1)", "type": "power_source", "output_voltage": 3.3, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "battery"}, # 0.02mA -> 20uA
-            {"id": "pmic_ldo2", "label": "PMIC (LDO2)", "type": "power_source", "output_voltage": 3.6, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "vbb"}, # 0.02mA -> 20uA
-            {"id": "display_1v8", "label": "Display 1V8", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"}, # 0.01mA -> 10uA
+            {"id": "vbb", "label": "VBB", "type": "power_source", "output_voltage": 3.9, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "battery"}, 
+            {"id": "pmic_buck", "label": "PMIC (BUCK_1V8)", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.95, "quiescent_current_uA": 50.0, "input_source_id": "battery"}, 
+            {"id": "pmic_ldo1", "label": "PMIC (LDO1)", "type": "power_source", "output_voltage": 3.3, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "battery"}, 
+            {"id": "pmic_ldo2", "label": "PMIC (LDO2)", "type": "power_source", "output_voltage": 3.6, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "vbb"}, 
+            {"id": "display_1v8", "label": "Display 1V8", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"}, 
             {"id": "ext_ldo_avdd", "label": "ext. LDO AVDD", "type": "power_source", "output_voltage": 3.0, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "battery"},
             {"id": "ldo_mcu", "label": "LDO_MCU", "type": "power_source", "output_voltage": 0.9, "efficiency": 0.5, "quiescent_current_uA": 10.0, "input_source_id": "battery"},
             {"id": "dd_ovdd", "label": "Display Driver OVDD", "type": "power_source", "output_voltage": 4.5, "efficiency": 0.85, "quiescent_current_uA": 30.0, "input_source_id": "battery"},
@@ -100,7 +106,7 @@ def initialize_data():
             {"id": "lsw3_mcu", "label": "LSW3 MCU", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"},
             {"id": "drv2624", "label": "DRV2624", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck", "note": "I2C Address: 0x5A and 0x58"},
             
-            # Components (power_consumption 欄位只在初始化時使用一次)
+            # Components
             {"id": "mcu", "type": "component", "group": "SoC", "endpoint": "MCU Core", "power_consumption": 2.5, "input_source_id": "pmic_buck"},
             {"id": "ble", "type": "component", "group": "SoC", "endpoint": "BLE Radio", "power_consumption": 5.0, "input_source_id": "pmic_buck"},
             {"id": "soc_core", "type": "component", "group": "SoC", "endpoint": "core", "power_consumption": 1.0, "input_source_id": "ldo_mcu"},
@@ -121,7 +127,7 @@ def initialize_data():
             {"id": "node_26", "type": "component", "group": "Temp Sensor TMP118B", "endpoint": "VDD", "power_consumption": 1.0, "input_source_id": "pmic_buck"},
         ]
     }
-    st.session_state.max_id = 26 # 保持 26
+    st.session_state.max_id = 26
 
     st.session_state.group_colors = {
         "SoC": "#FFC107", "Display Module": "#4CAF50", "AFE4510": "#F44336",
@@ -134,39 +140,20 @@ def initialize_data():
     all_comp_groups = set(n['group'] for n in component_nodes)
     node_lookup = {(n['group'], n['endpoint']): n['id'] for n in component_nodes}
     
-    # --- 2. 【已修改】quiescent_current_mA -> quiescent_current_uA ---
+    # --- 2. 先初始化 Power Source Modes ---
     st.session_state.power_source_modes = {}
     for ps in power_source_nodes:
         base_note = ps.get("note", "") 
         st.session_state.power_source_modes[ps['id']] = {
-            "On": {
-                "output_voltage": ps['output_voltage'], 
-                "efficiency": ps['efficiency'], 
-                "quiescent_current_uA": ps['quiescent_current_uA'], # <-- 已重命名
-                "note": base_note
-            },
-            "Off": {
-                "output_voltage": 0.0, 
-                "efficiency": 0.0, 
-                "quiescent_current_uA": ps['quiescent_current_uA'], # <-- 已重命名
-                "note": "Device is off"
-            }
+            "On": {"output_voltage": ps['output_voltage'], "efficiency": ps['efficiency'], "quiescent_current_uA": ps['quiescent_current_uA'], "note": base_note},
+            "Off": {"output_voltage": 0.0, "efficiency": 0.0, "quiescent_current_uA": ps['quiescent_current_uA'], "note": "Device is off"}
         }
 
-    # --- 3. 【已修改】建立 Operating Modes (儲存 "currents_uA") ---
+    # --- 3. 建立 Operating Modes (儲存 "currents_uA") ---
     st.session_state.operating_modes = {}
     
-    def get_default_current_uA(node): # <-- 已重命名
-        source_id = node.get('input_source_id')
-        if not source_id: return 0.0
-        source_voltage = st.session_state.power_source_modes.get(source_id, {}).get("On", {}).get("output_voltage", 1.0)
-        if source_voltage == 0: return 0.0
-        # (mW / V) * 1000 = uA
-        return (node.get('power_consumption', 0.0) / source_voltage) * 1000.0 # <-- 乘以 1000
-    
-    # --- 3A. 處理您貼上的表格資料 ---
+    # 3A. 處理您貼上的表格資料
     user_table_data = [
-        # 您的表格數值 (1507, 1159 等) 現在被正確地當作 uA
         {"Group": "Display Module", "Mode Name": "Active - 60Hz", "Endpoint": "AVDD", "Current (uA)": 1507, "Mode Note": "100% OPR, White, 800nits, NBM"},
         {"Group": "Display Module", "Mode Name": "AOD - 15 Hz", "Endpoint": "AVDD", "Current (uA)": 1159, "Mode Note": "20% OPR, White, 50nits"},
         {"Group": "Display Module", "Mode Name": "Active - 60Hz", "Endpoint": "IO_1V8", "Current (uA)": 1281, "Mode Note": "100% OPR, White, 800nits, NBM"},
@@ -183,7 +170,7 @@ def initialize_data():
         group = row["Group"]
         mode = row["Mode Name"]
         endpoint = row["Endpoint"]
-        current = row["Current (uA)"] # <-- 讀取 uA
+        current = row["Current (uA)"]
         note = row.get("Mode Note", "")
         
         node_id = node_lookup.get((group, endpoint))
@@ -191,31 +178,38 @@ def initialize_data():
         
         if mode not in new_op_modes[group]:
             all_node_ids_in_group = {n['id'] for n in component_nodes if n['group'] == group}
-            new_op_modes[group][mode] = {"currents_uA": {nid: 0.0 for nid in all_node_ids_in_group}, "note": note} # <-- 已重命名
+            new_op_modes[group][mode] = {"currents_uA": {nid: 0.0 for nid in all_node_ids_in_group}, "note": note}
         
-        new_op_modes[group][mode]["currents_uA"][node_id] = current # <-- 存入 uA
+        new_op_modes[group][mode]["currents_uA"][node_id] = current
         if note:
             new_op_modes[group][mode]["note"] = note
     
     st.session_state.operating_modes = dict(new_op_modes)
     
-    # --- 3B. 為所有「其他」群組建立 "Default" 模式 ---
+    # 3B. 為所有「其他」群組建立 "Default" 模式
+    def get_default_current_uA(node):
+        source_id = node.get('input_source_id')
+        if not source_id: return 0.0
+        source_voltage = st.session_state.power_source_modes.get(source_id, {}).get("On", {}).get("output_voltage", 1.0)
+        if source_voltage == 0: return 0.0
+        return (node.get('power_consumption', 0.0) / source_voltage) * 1000.0
+
     for group in all_comp_groups:
         if group in st.session_state.operating_modes:
             continue 
         
         group_nodes = [n for n in component_nodes if n['group'] == group]
-        default_currents = {n['id']: get_default_current_uA(n) for n in group_nodes} # <-- 已重命名
+        default_currents = {n['id']: get_default_current_uA(n) for n in group_nodes}
         st.session_state.operating_modes[group] = {
             "Default": {
-                "currents_uA": default_currents, # <-- 已重命名
+                "currents_uA": default_currents,
                 "note": "Default operating mode."
             }
         }
 
     st.session_state.component_group_notes = {group: "" for group in all_comp_groups}
 
-    # --- 4. 建立 Use Cases (保持不變) ---
+    # --- 4. 建立 Use Cases ---
     default_comp_settings = {}
     for group in all_comp_groups:
         group_modes = st.session_state.operating_modes.get(group, {})
@@ -251,19 +245,38 @@ def initialize_data():
     
     st.session_state.active_use_case = new_use_case_names[0]
     
-    # --- 5. User Profiles (保持不變) ---
+    # --- 5. User Profiles ---
     st.session_state.battery_capacity_mAh = 64.5
-    empty_profile = {name: 0 for name in new_use_case_names}
-    typical_profile = copy.deepcopy(empty_profile)
-    typical_profile["On-wrist stationary, BLE connected"] = 10 
-    typical_profile["On-wrist active, BLE connected"] = 6
-    typical_profile["Always On Display"] = 8 
-    st.session_state.user_profiles = {
-        "Typical User": typical_profile,
-        "Heavy User": copy.deepcopy(empty_profile),
-        "Light User": copy.deepcopy(empty_profile)
+    st.session_state.battery_note = "" # <-- 【新增】 在此處初始化
+    
+    all_use_case_names = list(st.session_state.use_cases.keys())
+    empty_profile = {name: 0 for name in all_use_case_names}
+    
+    all_profiles_data = {
+        "Typical User": {
+            "On-wrist stationary, BLE connected": 36000,
+            "On-wrist active, BLE connected": 21600,
+            "Always On Display": 28800
+        },
+        "Heavy User": {
+            "On-wrist stationary, BLE connected": 18000,
+            "Always On Display": 50400,
+            "On-wrist active, GPS": 7200,
+            "6-Axis Accel Exercise": 10800
+        },
+        "Light User": {
+            "Off-wrist, BLE advertising": 57600,
+            "On-wrist stationary, BLE connected": 28800
+        }
     }
-    st.session_state.active_user_profile = "Typical User"
+
+    st.session_state.user_profiles = {}
+    for profile_name, hours_dict in all_profiles_data.items():
+        clean_profile = copy.deepcopy(empty_profile)
+        clean_profile.update(hours_dict)
+        st.session_state.user_profiles[profile_name] = clean_profile
+
+    st.session_state.active_user_profile = list(st.session_state.user_profiles.keys())[0]
     
     st.session_state.initialized = True
 
@@ -465,6 +478,7 @@ def get_vsys_referred_power_contributions(node_list):
 #  側邊欄 UI (Sidebar UI)
 # ===============================================================
 with st.sidebar:
+    
     components.html(
     """
     <script>
@@ -505,7 +519,8 @@ with st.sidebar:
             'use_cases': st.session_state.use_cases,
             'battery_capacity_mAh': st.session_state.battery_capacity_mAh,
             'user_profiles': st.session_state.user_profiles,
-            'component_group_notes': st.session_state.component_group_notes
+            'component_group_notes': st.session_state.component_group_notes,
+            'battery_note': st.session_state.battery_note # <-- 【新增】 確保筆記被儲存
         }
         
         try:
@@ -551,6 +566,8 @@ with st.sidebar:
                     st.error("錯誤：無法解析 JSON 檔案。請確認檔案內容是否為有效的 JSON 格式。")
                 except Exception as e:
                     st.error(f"讀取檔案時發生錯誤: {e}")
+
+# === 側邊欄結束 ===
 
 # ===============================================================
 #  主內容頁面 (Main Content)
@@ -1314,68 +1331,127 @@ with tabs[4]:
     st.number_input("Battery Capacity (mAh)", min_value=0.0, value=st.session_state.battery_capacity_mAh, key="battery_capacity_input")
     st.session_state.battery_capacity_mAh = st.session_state.battery_capacity_input
 
+    # --- 【START：新增的「Battery Note」】 ---
+    st.session_state.battery_note = st.text_area(
+        "Battery Notes", 
+        value=st.session_state.get("battery_note", ""), # 使用 .get() 避免錯誤
+        key="battery_note_input",
+        placeholder="Enter notes about the battery, e.g., model number, age, test conditions..."
+    )
+    # --- 【END：新增】 ---
     st.markdown("---")
-    st.subheader("Estimation Results per Profile")
+    st.subheader("Estimation Results Summary")
 
+    # --- 1. 計算並顯示「結果總覽表格」(保持不變) ---
     power_per_use_case = {uc: calculate_power(use_case_name_override=uc) for uc in st.session_state.use_cases}
     vsys_node = get_node_by_id("battery")
     vsys_voltage = vsys_node['output_voltage'] if vsys_node else 3.85
 
-    for profile_name, profile_data in list(st.session_state.user_profiles.items()):
+    results_data = []
+    for profile_name, profile_data in st.session_state.user_profiles.items():
+        total_energy_mW_s = sum(power_per_use_case.get(uc_name, 0) * profile_data.get(uc_name, 0) for uc_name, seconds in profile_data.items())
+        total_seconds_in_profile = sum(profile_data.values())
         
-        total_energy_mWh = sum(power_per_use_case.get(uc_name, 0) * profile_data.get(uc_name, 0) for uc_name in profile_data)
-        total_hours_in_profile = sum(profile_data.values())
-        avg_power_mW = total_energy_mWh / 24 if total_hours_in_profile > 0 else 0
+        avg_power_mW = total_energy_mW_s / total_seconds_in_profile if total_seconds_in_profile > 0 else 0
         avg_current_mA = avg_power_mW / vsys_voltage if vsys_voltage > 0 else 0
         
         if avg_current_mA > 0:
-            battery_life_hours = st.session_state.battery_capacity_mAh / avg_current_mA
-            battery_life_days = battery_life_hours / 24
-            life_display_str = f"{battery_life_days:.2f} Days"
+            battery_life_days = (st.session_state.battery_capacity_mAh / avg_current_mA) / 24
         else:
             battery_life_days = 0 
-            life_display_str = "Infinite"
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric(label=f"**{profile_name}**", value=life_display_str)
-        with col2:
-            st.metric(label="Avg. Power", value=f"{avg_power_mW:.2f} mW")
-        with col3:
-            # 【已修改】顯示 uA，並顯示到整數
-            st.metric(label="Avg. Current", value=f"{avg_current_mA * 1000.0:.0f} uA")
-            
-        with st.expander(f"編輯 '{profile_name}' 設定檔", expanded=False):
-            
-            for uc_name in st.session_state.use_cases:
-                if uc_name not in profile_data: profile_data[uc_name] = 0
-            for uc_name in list(profile_data.keys()):
-                if uc_name not in st.session_state.use_cases: del profile_data[uc_name]
+        profile_summary = {
+            "Profile": profile_name,
+            "Battery Life (Days)": f"{battery_life_days:.2f}",
+            "Avg. Power (mW)": f"{avg_power_mW:.2f}",
+            "Avg. Current (uA)": f"{avg_current_mA * 1000.0:.0f}"
+        }
+        results_data.append(profile_summary)
 
-            total_hours = 0
-            for uc_name in st.session_state.use_cases:
-                hours = st.slider(
-                    f"Hours in '{uc_name}'", 0, 24, 
-                    value=profile_data.get(uc_name, 0), 
-                    key=f"profile_{profile_name}_{uc_name}"
-                )
-                profile_data[uc_name] = hours
-                total_hours += hours
-            
-            st.metric("Total Hours per Day", f"{total_hours} / 24")
-            if total_hours != 24:
-                st.warning("為獲得準確的每日估算，設定檔的總時數應為 24 小時。")
-            
-            if len(st.session_state.user_profiles) > 1:
-                with st.expander(f"🗑️ 刪除設定檔 '{profile_name}'"):
-                    st.warning(f"此操作將永久刪除 '{profile_name}' 設定檔，無法復原。")
-                    if st.button(f"確認永久刪除 '{profile_name}'", key=f"del_profile_confirm_{profile_name}", type="primary"):
-                        del st.session_state.user_profiles[profile_name]
-                        st.rerun()
+    if results_data:
+        df_results = pd.DataFrame(results_data)
+        st.dataframe(df_results.set_index('Profile').T, width='stretch')
+    else:
+        st.info("No User Profiles found. Add one below.")
+    # --- 「結果總覽表格」結束 ---
+
 
     st.markdown("---")
-    with st.expander("➕ Add New Profile"):
-        profile_name = st.text_input("New Profile Name")
+    st.subheader("User Profiles")
+
+    with st.expander("Edit User Profile (Seconds)", expanded=True):
+        
+        all_use_cases = list(st.session_state.use_cases.keys())
+        all_profiles = list(st.session_state.user_profiles.keys())
+        
+        data_for_editor = {}
+        for profile_name, profile_data in st.session_state.user_profiles.items():
+            profile_seconds = {uc: profile_data.get(uc, 0) for uc in all_use_cases}
+            data_for_editor[profile_name] = profile_seconds
+            
+        df_editor = pd.DataFrame(data_for_editor, index=all_use_cases)
+        df_editor.index.name = "Use Case"
+        
+        edited_df = st.data_editor(
+            df_editor,
+            key="profile_data_editor",
+            use_container_width=True,
+            column_config={
+                profile_name: st.column_config.NumberColumn(
+                    label=profile_name,
+                    min_value=0,
+                    max_value=86400,
+                    step=1,
+                    format="%d" 
+                ) for profile_name in all_profiles
+            }
+        )
+
+        needs_update = False
+        for profile_name in edited_df.columns:
+            new_data = edited_df[profile_name].to_dict()
+            if st.session_state.user_profiles[profile_name] != new_data:
+                st.session_state.user_profiles[profile_name] = new_data
+                needs_update = True
+        
+        if needs_update:
+            st.rerun()
+
+        # --- 【START：已修改】 ---
+        # 移除了 "Total Seconds per Day" 標題
+        total_seconds_per_profile = edited_df.sum()
+        total_seconds_per_profile.name = "Total Seconds"
+        st.dataframe(total_seconds_per_profile, use_container_width=True) # 總和表格緊跟在 data_editor 下方
+        # --- 【END：修改】 ---
+        
+        invalid_profiles = total_seconds_per_profile[total_seconds_per_profile != 86400].index.tolist()
+        if invalid_profiles:
+            st.error(f"警告：以下 Profile 的總秒數不等於 86400： {', '.join(invalid_profiles)}")
+
+
+    # (新增/刪除 Profile 的功能保持不變)
+    st.markdown("---")
+    with st.expander("➕ Add / 🗑️ Delete Profile"):
+        
+        st.markdown("##### Delete a Profile")
+        profile_to_delete = st.selectbox(
+            "Select Profile to delete", 
+            options=[""] + list(st.session_state.user_profiles.keys()), 
+            key="delete_profile_select"
+        )
+        if st.button("Delete Selected Profile", type="primary"):
+            if profile_to_delete and profile_to_delete in st.session_state.user_profiles:
+                if len(st.session_state.user_profiles) > 1:
+                    del st.session_state.user_profiles[profile_to_delete]
+                    st.success(f"已刪除 Profile: '{profile_to_delete}'")
+                    st.rerun()
+                else:
+                    st.error("無法刪除最後一個 Profile。")
+            else:
+                st.warning("請選擇一個要刪除的 Profile。")
+
+        st.markdown("##### Add New Profile")
+        profile_name = st.text_input("New Profile Name", key="add_profile_name")
         if st.button("Add Profile", type="secondary"):
             if profile_name and profile_name not in st.session_state.user_profiles:
                 st.session_state.user_profiles[profile_name] = {uc_name: 0 for uc_name in st.session_state.use_cases}
