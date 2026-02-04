@@ -1,1715 +1,1178 @@
-import streamlit as st
-import graphviz
-from itertools import cycle
-import copy
-import json
-from collections import defaultdict
-import pandas as pd
-import altair as alt
-
-# ===============================================================
-#  頁面設定 (必須是第一個執行的 Streamlit 指令)
-# ===============================================================
-st.set_page_config(layout="wide")
-st.title("Mukai Power Model and Battery Life Calculation V1.3")
-
-# JavaScript 元件的 import
-import streamlit.components.v1 as components
-
-# ===============================================================
-#  CSS 樣式 (保持您自訂的主題)
-# ===============================================================
-
-if 'theme' not in st.session_state:
-    st.session_state.theme = "Dark" # 預設為 Dark
-
-st.markdown("""
-<style>
-/* Custom styling for ratio inputs in Use Case Management */
-div[data-testid="stVerticalBlock"] .stNumberInput {
-    max-width: 120px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-if st.session_state.theme == "Dark":
-    st.markdown("""
-        <style>
-        /* ... (Dark Theme CSS 保持不變) ... */
-        .stApp, [data-testid="stSidebar"] { background-color: #0e1117; }
-        h1, h2, h3, h4, h5, h6, .st-emotion-cache-16txtl3, p, .st-emotion-cache-1y4p8pa { color: #fafafa !important; }
-        [data-testid="stExpander"] summary { color: #fafafa !important; }
-        div[data-testid="stExpander"] div[role="region"] { background-color: #1c1f2b; }
-        [data-testid="stBlockContainer"], [data-testid="stDataFrame"], .stChart { background-color: #0e1117 !important; }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div { background-color: #1c1f2b !important; border-color: #AAAAAA !important; }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div > div { color: #fafafa !important; }
-        div[data-baseweb="popover"] ul[role="listbox"] { background-color: #1c1f2b !important; }
-        li[role="option"] { color: #fafafa !important; }
-        </style>
-    """, unsafe_allow_html=True)
-else: # Light Theme
-    st.markdown("""
-        <style>
-        /* ... (Light Theme CSS 保持不變) ... */
-        .stApp { background-color: #FFFFFF; }
-        [data-testid="stSidebar"] { background-color: #F0F2F6; }
-        [data-testid="stBlockContainer"], [data-testid="stDataFrame"], .stChart { background-color: #FFFFFF !important; border-color: #F0F2F6 !important; }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div { background-color: #FFFFFF !important; border-color: #AAAAAA !important; }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div > div { color: #0e1117 !important; }
-        div[data-baseweb="popover"] ul[role="listbox"] { background-color: #FFFFFF !important; }
-        li[role="option"] { color: #0e1117 !important; }
-        h1, h2, h3, h4, h5, h6, .st-emotion-cache-16txtl3, p, .st-emotion-cache-1y4p8pa { color: #0e1117 !important; }
-        [data-testid="stExpander"] summary { color: #0e1117 !important; }
-        div[data-testid="stExpander"] div[role="region"] { background-color: #F0F2F6; }
-        </style>
-    """, unsafe_allow_html=True)
-
-# ---
-# 核心數據結構 (Core Data Structure)
-# ---
-DEFAULT_COLORS = cycle(["#4CAF50", "#FF5722", "#607D8B", "#E91E63", "#9C27B0", "#03A9F4"])
-
-def initialize_data():
-    """初始化所有 session_state 數據"""
-    if 'initialized' in st.session_state:
-        # (防呆檢查)
-        if 'component_group_notes' not in st.session_state:
-            all_comp_groups = set(n['group'] for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component')
-            st.session_state.component_group_notes = {group: "" for group in all_comp_groups}
-        for ps_id, modes in st.session_state.power_source_modes.items():
-            for mode_name, params in modes.items():
-                if 'note' not in params:
-                    st.session_state.power_source_modes[ps_id][mode_name]['note'] = ""
-        if 'battery_note' not in st.session_state:
-            st.session_state.battery_note = ""
-        if 'profile_dou_specs' not in st.session_state:
-            # 如果 specs 不在，為現有的 profile 補上預設值
-            st.session_state.profile_dou_specs = {profile_name: 7.0 for profile_name in st.session_state.user_profiles.keys()}
-            
-        return
-
-    # --- 1. 【已修正】 完整的節點定義 ---
-    st.session_state.power_tree_data = {
-        "nodes": [
-            # Power Sources (13 個)
-            {"id": "battery", "label": "Vsys", "type": "power_source", "output_voltage": 3.85, "efficiency": 1.0, "quiescent_current_uA": 0.0, "input_source_id": None},
-            {"id": "vbb", "label": "VBB", "type": "power_source", "output_voltage": 3.9, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "battery"},
-            {"id": "pmic_buck", "label": "PMIC (BUCK_1V8)", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.95, "quiescent_current_uA": 50.0, "input_source_id": "battery"},
-            {"id": "pmic_ldo1", "label": "PMIC (LDO1)", "type": "power_source", "output_voltage": 3.3, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "battery"},
-            {"id": "pmic_ldo2", "label": "PMIC (LDO2)", "type": "power_source", "output_voltage": 3.6, "efficiency": 0.85, "quiescent_current_uA": 20.0, "input_source_id": "vbb"},
-            {"id": "display_1v8", "label": "Display 1V8", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.9, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"},
-            {"id": "ext_ldo_avdd", "label": "ext. LDO AVDD", "type": "power_source", "output_voltage": 3.0, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "battery"},
-            {"id": "ldo_mcu", "label": "LDO_MCU", "type": "power_source", "output_voltage": 0.9, "efficiency": 0.5, "quiescent_current_uA": 10.0, "input_source_id": "battery"},
-            {"id": "dd_ovdd", "label": "Display Driver OVDD", "type": "power_source", "output_voltage": 4.5, "efficiency": 0.85, "quiescent_current_uA": 30.0, "input_source_id": "battery"},
-            {"id": "dd_ovss", "label": "Display Driver OVSS", "type": "power_source", "output_voltage": 4.5, "efficiency": 0.85, "quiescent_current_uA": 30.0, "input_source_id": "battery"},
-            {"id": "ls_mcu", "label": "LS MCU", "type": "power_source", "output_voltage": 1.2, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"},
-            {"id": "lsw3_mcu", "label": "LSW3 MCU", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck"},
-            {"id": "drv2624", "label": "DRV2624", "type": "power_source", "output_voltage": 1.8, "efficiency": 0.85, "quiescent_current_uA": 10.0, "input_source_id": "pmic_buck", "note": "I2C Address: 0x5A and 0x58"},
-            
-            # Components (18 個)
-            {"id": "mcu", "type": "component", "group": "SoC", "endpoint": "MCU Core", "power_consumption": 2.5, "input_source_id": "pmic_buck"},
-            {"id": "ble", "type": "component", "group": "SoC", "endpoint": "BLE Radio", "power_consumption": 5.0, "input_source_id": "pmic_buck"},
-            {"id": "soc_core", "type": "component", "group": "SoC", "endpoint": "core", "power_consumption": 1.0, "input_source_id": "ldo_mcu"},
-            {"id": "display", "type": "component", "group": "Display Module", "endpoint": "AVDD", "power_consumption": 15.0, "input_source_id": "ext_ldo_avdd"},
-            {"id": "node_8", "type": "component", "group": "Display Module", "endpoint": "IO_1V8", "power_consumption": 8.0, "input_source_id": "display_1v8"},
-            {"id": "node_15", "type": "component", "group": "Display Module", "endpoint": "OVDD", "power_consumption": 5.0, "input_source_id": "dd_ovdd"},
-            {"id": "node_16", "type": "component", "group": "Display Module", "endpoint": "OVSS", "power_consumption": 5.0, "input_source_id": "dd_ovss"},
-            {"id": "hrm", "type": "component", "group": "AFE4510", "endpoint": "TX", "power_consumption": 10.0, "input_source_id": "pmic_ldo2"},
-            {"id": "node_9", "type": "component", "group": "AFE4510", "endpoint": "RX/IO", "power_consumption": 7.0, "input_source_id": "pmic_ldo1"},
-            {"id": "node_17", "type": "component", "group": "ALS", "endpoint": "ALS VDD", "power_consumption": 1.0, "input_source_id": "display_1v8"},
-            {"id": "node_18", "type": "component", "group": "Temp Sensor TMP118A", "endpoint": "TEMP sensor 1V8", "power_consumption": 1.0, "input_source_id": "display_1v8"},
-            {"id": "node_19", "type": "component", "group": "Barometer", "endpoint": "Baro 1V8", "power_consumption": 1.0, "input_source_id": "display_1v8"},
-            {"id": "node_21", "type": "component", "group": "GNSS", "endpoint": "VDD", "power_consumption": 1.0, "input_source_id": "battery"},
-            {"id": "node_22", "type": "component", "group": "GNSS", "endpoint": "IO", "power_consumption": 1.0, "input_source_id": "pmic_buck"},
-            {"id": "node_23", "type": "component", "group": "Flash", "endpoint": "VDD", "power_consumption": 1.0, "input_source_id": "pmic_buck"},
-            {"id": "node_24", "type": "component", "group": "IMU", "endpoint": "VDD", "power_consumption": 1.0, "input_source_id": "pmic_buck"},
-            {"id": "node_25", "type": "component", "group": "Barometer", "endpoint": "VDD", "power_consumption": 1.0, "input_source_id": "pmic_buck"},
-            {"id": "node_26", "type": "component", "group": "Temp Sensor TMP118B", "endpoint": "VDD", "power_consumption": 1.0, "input_source_id": "pmic_buck"},
-        ]
-    }
-    st.session_state.max_id = 26 # 已修正回 26
-
-    st.session_state.group_colors = {
-        "SoC": "#FFC107", "Display Module": "#4CAF50", "AFE4510": "#F44336",
-        "ALS": "#607D8B", "Temp Sensor TMP118A": "#E91E63", "Barometer": "#03A9F4",
-        "GNSS": "#FF9800", "Flash": "#795548", "IMU": "#9E9E9E", "Temp Sensor TMP118B": "#00BCD4"
-    }
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Power Model Tool v8.2 (Tree View Control)</title>
     
-    component_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component']
-    power_source_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
-    all_comp_groups = set(n['group'] for n in component_nodes)
-    node_lookup = {(n['group'], n['endpoint']): n['id'] for n in component_nodes}
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     
-    # --- 2. 先初始化 Power Source Modes ---
-    st.session_state.power_source_modes = {}
-    for ps in power_source_nodes:
-        base_note = ps.get("note", "") 
-        st.session_state.power_source_modes[ps['id']] = {
-            "On": {"output_voltage": ps['output_voltage'], "efficiency": ps['efficiency'], "quiescent_current_uA": ps['quiescent_current_uA'], "note": base_note},
-            "Off": {"output_voltage": 0.0, "efficiency": 0.0, "quiescent_current_uA": ps['quiescent_current_uA'], "note": "Device is off"}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style>
+        body { padding: 20px; background-color: #f4f6f9; font-family: 'Segoe UI', Microsoft JhengHei, sans-serif; }
+        .nav-tabs .nav-link { cursor: pointer; color: #495057; font-size: 0.95rem; }
+        .nav-tabs .nav-link.active { font-weight: bold; border-top: 3px solid #0d6efd; color: #0d6efd; background: #fff; }
+        .tab-content-area { display: none; padding-top: 20px; }
+        .tab-content-area.active { display: block; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        .mermaid { background: white; padding: 0; text-align: center; } 
+        #treeViewport { 
+            border: 1px solid #e9ecef; background: white; border-radius: 4px; 
+            min-height: 200px; position: relative; transition: all 0.3s; overflow: visible; 
         }
+        .zoom-controls { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(255,255,255,0.8); padding: 5px; border-radius: 4px; border: 1px solid #ddd; }
+        .tree-collapsed { display: none !important; }
+        .edgeLabel { font-size: 0.8em !important; color: #666 !important; } 
+        .edgeLabel .label rect { fill: #fcfcfc !important; stroke: #e0e0e0 !important; stroke-width: 0.5px; rx: 2px; ry: 2px; }
+        .clickable-node { cursor: pointer; user-select: none; border-bottom: 1px dashed #adb5bd; transition: all 0.2s; }
+        .clickable-node:hover { background-color: #e9ecef; color: #0d6efd; border-bottom-color: #0d6efd; }
+        .table-sm td, .table-sm th { vertical-align: middle; }
+        
+        .profile-col { min-width: 100px; border-left: 1px solid #dee2e6; }
+        .profile-input { width: 100%; border: 1px solid transparent; text-align: center; background: transparent; padding: 2px; }
+        .profile-input:hover { border-color: #e9ecef; background: #fff; }
+        .profile-input:focus { border-color: #86b7fe; outline: 0; background: white; }
+        .result-pass { color: #198754; font-weight: bold; background-color: #d1e7dd; }
+        .result-fail { color: #dc3545; font-weight: bold; background-color: #f8d7da; }
+        .sticky-col { position: sticky; left: 0; background-color: #fff; z-index: 2; border-right: 2px solid #dee2e6; }
 
-    # --- 3. 建立 Operating Modes (儲存 "currents_uA") ---
-    st.session_state.operating_modes = {}
-    
-    # 3A. 處理您貼上的表格資料
-    user_table_data = [
-        {"Group": "Display Module", "Mode Name": "Active - 60Hz", "Endpoint": "AVDD", "Current (uA)": 1507, "Mode Note": "100% OPR, White, 800nits, NBM"},
-        {"Group": "Display Module", "Mode Name": "AOD - 15 Hz", "Endpoint": "AVDD", "Current (uA)": 1159, "Mode Note": "20% OPR, White, 50nits"},
-        {"Group": "Display Module", "Mode Name": "Active - 60Hz", "Endpoint": "IO_1V8", "Current (uA)": 1281, "Mode Note": "100% OPR, White, 800nits, NBM"},
-        {"Group": "Display Module", "Mode Name": "AOD - 15 Hz", "Endpoint": "IO_1V8", "Current (uA)": 861, "Mode Note": "20% OPR, White, 50nits"},
-        {"Group": "Display Module", "Mode Name": "AOD - 15 Hz", "Endpoint": "OVSS", "Current (uA)": 1, "Mode Note": "50 nits, 15Hz"},
-        {"Group": "Display Module", "Mode Name": "Idle mode", "Endpoint": "AVDD", "Current (uA)": 0, "Mode Note": "Display off"},
-        {"Group": "Display Module", "Mode Name": "Idle mode", "Endpoint": "IO_1V8", "Current (uA)": 0.1, "Mode Note": "Display off"},
-        {"Group": "Display Module", "Mode Name": "Idle mode", "Endpoint": "OVDD", "Current (uA)": 0, "Mode Note": "Display off"},
-        {"Group": "Display Module", "Mode Name": "Idle mode", "Endpoint": "OVSS", "Current (uA)": 0, "Mode Note": "Display off"},
-    ]
+        .project-name-input { border: none; background: transparent; font-style: italic; color: #6c757d; text-align: right; width: 300px; }
+        .project-name-input:focus { outline: none; border-bottom: 1px solid #0d6efd; color: #000; }
 
-    new_op_modes = defaultdict(dict)
-    for row in user_table_data:
-        group = row["Group"]
-        mode = row["Mode Name"]
-        endpoint = row["Endpoint"]
-        current = row["Current (uA)"]
-        note = row.get("Mode Note", "")
-        
-        node_id = node_lookup.get((group, endpoint))
-        if not node_id: continue
-        
-        if mode not in new_op_modes[group]:
-            all_node_ids_in_group = {n['id'] for n in component_nodes if n['group'] == group}
-            new_op_modes[group][mode] = {"currents_uA": {nid: 0.0 for nid in all_node_ids_in_group}, "note": note}
-        
-        new_op_modes[group][mode]["currents_uA"][node_id] = current
-        if note:
-            new_op_modes[group][mode]["note"] = note
-    
-    st.session_state.operating_modes = dict(new_op_modes)
-    
-    # 3B. 為所有「其他」群組建立 "Default" 模式
-    def get_default_current_uA(node):
-        source_id = node.get('input_source_id')
-        if not source_id: return 0.0
-        source_voltage = st.session_state.power_source_modes.get(source_id, {}).get("On", {}).get("output_voltage", 1.0)
-        if source_voltage == 0: return 0.0
-        return (node.get('power_consumption', 0.0) / source_voltage) * 1000.0
+        .comp-disabled { opacity: 0.6; filter: grayscale(100%); background-color: #f8f9fa; }
+        .comp-disabled .card-header { background-color: #e9ecef; color: #6c757d; }
 
-    for group in all_comp_groups:
-        if group in st.session_state.operating_modes:
-            continue 
+        /* Chat UI */
+        #chat-btn { position: fixed; bottom: 20px; right: 20px; z-index: 1050; border-radius: 50%; width: 60px; height: 60px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: transform 0.2s; }
+        #chat-btn:hover { transform: scale(1.1); }
+        #chat-panel { 
+            position: fixed; bottom: 90px; right: 20px; width: 400px; height: 600px; z-index: 1050; 
+            background: white; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); 
+            display: none; flex-direction: column; overflow: hidden; border: 1px solid #dee2e6;
+        }
+        .chat-header { background: #0d6efd; color: white; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; }
+        .chat-body { flex: 1; padding: 15px; overflow-y: auto; background: #f8f9fa; font-size: 0.9em; }
+        .chat-footer { padding: 10px; border-top: 1px solid #dee2e6; background: white; }
+        .msg { margin-bottom: 10px; padding: 8px 12px; border-radius: 10px; max-width: 85%; word-wrap: break-word; }
+        .msg-user { background: #e7f1ff; color: #000; align-self: flex-end; margin-left: auto; border-bottom-right-radius: 2px; }
+        .msg-ai { background: #fff; border: 1px solid #e9ecef; align-self: flex-start; margin-right: auto; border-bottom-left-radius: 2px; }
+        .msg-sys { font-size: 0.8em; color: #6c757d; text-align: center; margin-bottom: 15px; font-style: italic; }
+        .msg-ai p { margin-bottom: 0.5rem; }
+        .msg-ai pre { background: #f4f4f4; padding: 5px; border-radius: 4px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid" style="max-width: 1800px;">
+    <div id="globalError" class="alert alert-danger d-none mb-3 shadow-sm">
+        <strong>System Error:</strong> <span id="globalErrorMsg"></span>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+        <h3 class="mb-0 text-dark"><i class="bi bi-cpu text-primary"></i> Power Model Tool <span class="badge bg-success fs-6 align-middle">v8.2</span></h3>
+        <div class="text-muted small d-flex align-items-center">
+            <span class="me-2">Project:</span>
+            <input type="text" id="projectNameInput" class="project-name-input" value="Tracker Gen 3" onchange="window.updateProjectName(this.value)">
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs">
+        <li class="nav-item"><a class="nav-link active" onclick="window.switchTab('tab1', this)">1. Power Distribution</a></li>
+        <li class="nav-item"><a class="nav-link" onclick="window.switchTab('tab2', this)">2. Component</a></li>
+        <li class="nav-item"><a class="nav-link" onclick="window.switchTab('tab3', this)">3. Power Source</a></li>
+        <li class="nav-item"><a class="nav-link" onclick="window.switchTab('tab4', this)">4. Connections</a></li>
+        <li class="nav-item"><a class="nav-link" onclick="window.switchTab('tab5', this)">5. Use Case Mgmt</a></li>
+        <li class="nav-item"><a class="nav-link" onclick="window.switchTab('tab6', this)">6. Battery Life (Matrix)</a></li>
+        <li class="nav-item"><a class="nav-link" onclick="window.switchTab('tab7', this)">7. Energy Breakdown</a></li>
+        <li class="nav-item"><a class="nav-link" onclick="window.switchTab('tab8', this)">8. Configuration</a></li>
+    </ul>
+
+    <div id="tabContainer">
+        <div id="tab1" class="tab-content-area active">
+            <div id="validationAlert" class="alert alert-danger d-none shadow-sm mb-3"><i class="bi bi-exclamation-triangle-fill me-2"></i> <span id="validationMsg"></span></div>
+            <div class="context-bar d-flex justify-content-between align-items-center mb-3">
+                <div class="d-flex align-items-center">
+                    <label class="fw-bold me-2 text-secondary"><i class="bi bi-layers-half"></i> Scenario:</label>
+                    <select class="form-select form-select-sm w-auto fw-bold text-primary use-case-select" onchange="window.switchUseCase(this.value)"></select>
+                </div>
+                <div class="d-flex align-items-center">
+                    <span class="text-muted small me-2">Total Avg Load:</span>
+                    <span class="fw-bold fs-5 text-dark" id="tab1TotalCurrent">--</span> 
+                    <span class="small text-muted ms-1">uA (VSYS)</span>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12">
+                    <div class="card mb-4 shadow-sm">
+                        <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center py-2">
+                            <span>System Power Tree</span>
+                            <div>
+                                <button class="btn btn-sm btn-outline-secondary me-2" onclick="window.toggleTreeDirection()" id="btnTreeDir" title="Switch Direction"><i class="bi bi-arrow-down-up"></i> Dir: TD</button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="window.toggleTreeVisibility()" id="btnToggleTree"><i class="bi bi-arrows-collapse"></i> Hide Diagram</button>
+                            </div>
+                        </div>
+                        <div id="treeViewport">
+                            <div class="zoom-controls">
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-light border" onclick="window.zoomTree(0.1)"><i class="bi bi-plus-lg"></i></button>
+                                    <button class="btn btn-light border" onclick="window.zoomTree(-0.1)"><i class="bi bi-dash-lg"></i></button>
+                                    <button class="btn btn-light border" onclick="window.resetZoomTree()"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                </div>
+                            </div>
+                            <div class="mermaid" id="powerTreeDiagram">graph TD; Node[Initializing...]</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card mb-3 border-primary h-100">
+                                <div class="card-header bg-primary text-white fw-bold">Component Breakdown</div>
+                                <div class="card-body p-0 table-responsive">
+                                    <table class="table table-sm table-hover mb-0 text-center align-middle">
+                                        <thead class="table-light"><tr><th>Component</th><th>Mode Mix</th><th>Avg Load (uA)</th><th>Avg Power (uW)</th><th>%</th></tr></thead>
+                                        <tbody id="componentTableBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100">
+                                <div class="card-header bg-light fw-bold">Detailed Rail Analysis</div>
+                                <div class="card-body p-0 table-responsive">
+                                    <table class="table table-sm table-hover mb-0 text-center align-middle" style="font-size: 0.9em;">
+                                        <thead class="table-light"><tr><th>Rail Name</th><th>State</th><th>Vout (V)</th><th>Eff (%)</th><th>Load (uA)</th><th>Input (uA)</th><th>Source</th></tr></thead>
+                                        <tbody id="analysisTableBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="d-none"><canvas id="powerPieChart"></canvas></div>
+            </div>
+        </div>
+
+        <div id="tab2" class="tab-content-area">
+            <div class="d-flex justify-content-between align-items-center alert alert-info py-2 shadow-sm">
+                <span><i class="bi bi-pencil"></i> Component Current Consumption (uA) & Modes</span>
+                <button class="btn btn-sm btn-success shadow-sm" onclick="window.addNewComponent()"><i class="bi bi-plus-circle"></i> Add Component</button>
+            </div>
+            <div id="componentEditorContainer"></div>
+        </div>
+
+        <div id="tab3" class="tab-content-area">
+            <div class="d-flex justify-content-between align-items-center alert alert-info py-2 shadow-sm">
+                <span><i class="bi bi-lightning-fill"></i> Power Rails & Modes</span>
+                <button class="btn btn-sm btn-success shadow-sm" onclick="window.addNewSource()"><i class="bi bi-plus-circle"></i> Add Power Rail</button>
+            </div>
+            <div id="sourceEditorContainer" class="vstack gap-3"></div>
+            <div class="mt-4 p-3 bg-light border rounded">
+                <label class="fw-bold text-secondary mb-1">Power Architecture Notes:</label>
+                <textarea class="form-control" rows="3" id="tab3NoteInput" placeholder="e.g. PMIC I2C settings, buck regulator part numbers..." onchange="window.updateTab3Note(this.value)"></textarea>
+            </div>
+        </div>
+
+        <div id="tab4" class="tab-content-area">
+            <div class="alert alert-info py-2"><i class="bi bi-diagram-3"></i> Connections (Component -> Rail)</div>
+            <div class="card"><div class="card-body p-0"><table class="table table-striped align-middle mb-0"><thead class="table-light"><tr><th>Component</th><th>Node Name</th><th>Connected Rail</th></tr></thead><tbody id="connectionEditorBody"></tbody></table></div></div>
+            <div class="mt-4 p-3 bg-light border rounded">
+                <label class="fw-bold text-secondary mb-1">Connection Notes:</label>
+                <textarea class="form-control" rows="3" id="tab4NoteInput" placeholder="e.g. Power filtering requirements, dedicated LDOs..." onchange="window.updateTab4Note(this.value)"></textarea>
+            </div>
+        </div>
+
+        <div id="tab5" class="tab-content-area">
+            <div class="context-bar d-flex align-items-center mb-3 bg-light">
+                <label class="fw-bold me-2 text-secondary"><i class="bi bi-sliders"></i> Scenario:</label>
+                <select class="form-select form-select-sm w-auto fw-bold text-primary use-case-select" onchange="window.switchUseCase(this.value)"></select>
+                <span class="ms-auto text-muted small"><i class="bi bi-info-circle"></i> Define active states for this scenario.</span>
+            </div>
+            <div class="row">
+                <div class="col-md-7">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-white fw-bold">1. Component Duty Cycles</div>
+                        <div class="card-body p-0">
+                            <table class="table table-hover mb-0 align-middle">
+                                <thead class="table-light"><tr><th>Component</th><th>Mode Distribution</th><th style="width:100px;">Action</th></tr></thead>
+                                <tbody id="ucComponentBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-5">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-white fw-bold">2. Power Source Control</div>
+                        <div class="card-body p-0">
+                            <table class="table table-hover mb-0 align-middle">
+                                <thead class="table-light"><tr><th>Rail</th><th>Mode Select</th><th>Status</th></tr></thead>
+                                <tbody id="ucSourceBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab6" class="tab-content-area">
+            <div class="card mb-3">
+                <div class="card-body p-3 bg-light d-flex justify-content-between align-items-center">
+                    <div>
+                        <label class="fw-bold text-secondary me-2">Battery Capacity (mAh):</label>
+                        <input type="number" id="batCapacity" class="form-control d-inline-block w-auto text-center fw-bold text-primary" value="64.5" onchange="window.calcDOUMatrix()">
+                    </div>
+                    <div>
+                        <span class="text-muted small me-3"><i class="bi bi-info-circle"></i> Input: Seconds per Day</span>
+                        <button class="btn btn-primary btn-sm" onclick="window.addNewProfile()"><i class="bi bi-plus-lg"></i> Add Profile</button>
+                    </div>
+                </div>
+            </div>
+            <div class="card shadow-sm">
+                <div class="card-body p-0 table-responsive" style="max-height: 750px;">
+                    <table class="table table-bordered table-hover mb-0 align-middle text-center" style="font-size:0.9em; table-layout: fixed;">
+                        <thead class="table-light sticky-top" style="z-index: 5;" id="matrixThead"></thead>
+                        <tbody id="matrixTbody"></tbody>
+                        <tfoot class="table-light sticky-bottom" style="z-index: 5;" id="matrixTfoot"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab7" class="tab-content-area">
+            <div class="row">
+                <div class="col-md-8 offset-md-2">
+                    <div class="card shadow-sm">
+                        <div class="card-header text-center fw-bold d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-pie-chart-fill"></i> Daily Energy Breakdown (uWh)</span>
+                            <select id="douChartProfileSelect" class="form-select form-select-sm w-auto" onchange="window.renderDouChart()"></select>
+                        </div>
+                        <div class="card-body">
+                            <div style="height: 350px; position: relative;">
+                                <canvas id="douPieChart"></canvas>
+                            </div>
+                            <div class="mt-4 table-responsive">
+                                <table class="table table-sm table-striped table-bordered text-center align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr><th>Source / Component</th><th>Energy (uWh)</th><th>%</th></tr>
+                                    </thead>
+                                    <tbody id="douBreakdownBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab8" class="tab-content-area">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header fw-bold">File Management</div>
+                        <div class="card-body text-center d-flex flex-column justify-content-center">
+                            <p class="text-muted">Save/Load your project data.</p>
+                            <div class="d-grid gap-3">
+                                <button class="btn btn-outline-success" onclick="window.exportConfig()"><i class="bi bi-download"></i> Export JSON</button>
+                                <div class="input-group"><input type="file" class="form-control" id="importFile" accept=".json"><button class="btn btn-outline-primary" type="button" onclick="window.importConfig()">Import</button></div>
+                                <hr>
+                                <button class="btn btn-outline-danger btn-sm" onclick="window.resetToFactory()"><i class="bi bi-exclamation-triangle-fill me-2"></i> Reset to Default</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100 border-info">
+                        <div class="card-header fw-bold bg-info text-white"><i class="bi bi-robot"></i> Google AI Settings</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold">Provider</label>
+                                <select class="form-select form-select-sm" id="aiProvider" onchange="window.toggleAuthFields()">
+                                    <option value="studio">AI Studio (API Key)</option>
+                                    <option value="vertex">Google Cloud Vertex AI (Token)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold">Model Name</label>
+                                <input type="text" class="form-control form-control-sm" id="aiModel" value="gemini-1.5-pro">
+                            </div>
+
+                            <div id="field-apikey" class="mb-3">
+                                <label class="form-label small fw-bold">API Key <span class="text-muted fw-normal">(for AI Studio)</span></label>
+                                <input type="password" class="form-control form-control-sm" id="aiApiKey" placeholder="AIzSy...">
+                            </div>
+
+                            <div id="field-vertex" class="d-none">
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold">Project ID</label>
+                                    <input type="text" class="form-control form-control-sm" id="gcpProjectId" placeholder="my-gcp-project-id">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold">Access Token <span class="text-muted fw-normal">(Run: <code>gcloud auth print-access-token</code>)</span></label>
+                                    <input type="password" class="form-control form-control-sm" id="gcpToken" placeholder="ya29.a0...">
+                                </div>
+                                <div class="alert alert-warning py-1 small"><i class="bi bi-exclamation-triangle"></i> Requires GCP Project with Vertex AI API enabled.</div>
+                            </div>
+
+                            <div class="d-grid gap-2 mt-3">
+                                <button class="btn btn-primary btn-sm" onclick="window.saveAISettings()">Save Settings</button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="window.testAIConnection()" id="btnTestAI">Test Connection</button>
+                            </div>
+                            <div id="aiTestResult" class="mt-2 small"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<button id="chat-btn" class="btn btn-primary d-flex align-items-center justify-content-center" onclick="window.toggleChat()">
+    <i class="bi bi-chat-dots-fill fs-3"></i>
+</button>
+
+<div id="chat-panel">
+    <div class="chat-header">
+        <strong><i class="bi bi-robot me-2"></i> Power Assistant</strong>
+        <button class="btn btn-sm btn-close btn-close-white" onclick="window.toggleChat()"></button>
+    </div>
+    <div class="chat-body d-flex flex-column" id="chatBody">
+        <div class="msg msg-sys">Welcome! Set up AI in Tab 8 (Vertex AI or AI Studio) to start.</div>
+    </div>
+    <div class="chat-footer">
+        <div class="input-group">
+            <input type="text" id="chatInput" class="form-control" placeholder="Ask about power..." onkeypress="if(event.key==='Enter') window.sendChatMessage()">
+            <button class="btn btn-primary" onclick="window.sendChatMessage()"><i class="bi bi-send"></i></button>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="dutyCycleModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Edit Duty Cycle: <span id="modalCompName" class="fw-bold text-primary"></span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><div id="modalInputsContainer"></div><div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top"><span class="fw-bold">Total: <span id="modalTotalSum">0</span>%</span><span id="modalWarning" class="text-danger small fw-bold d-none">Total must be 100%</span></div></div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-primary" onclick="window.saveDutyCycle()">Save Changes</button></div>
+        </div>
+    </div>
+</div>
+
+<script>
+window.onerror = function(msg, url, lineNo) { document.getElementById("globalError").classList.remove("d-none"); document.getElementById("globalErrorMsg").innerText = `${msg} (Line: ${lineNo})`; return false; };
+function sanitizeId(str) { return 'n_' + str.replace(/[^a-zA-Z0-9]/g, '_'); }
+
+let STATE = null;
+let powerChart = null, douChart = null;
+let currentEditingComp = null;
+let currentZoom = 1.0;
+// [v8.2] Global variable for tree direction
+let currentTreeDir = 'TD';
+let dutyModal = null;
+let chatHistory = [];
+
+if (typeof mermaid !== 'undefined') mermaid.initialize({ startOnLoad: true, theme: 'default', securityLevel: 'loose' });
+
+// --- 3. POWER ENGINE (uA) ---
+window.PowerEngine = {
+    calculateRailDepth: function(railName, sourceMap, memo = {}) {
+        if (memo[railName] !== undefined) return memo[railName];
+        const src = sourceMap[railName]; if (!src || !src.input) { memo[railName] = 0; return 0; }
+        return 1 + this.calculateRailDepth(src.input, sourceMap, memo);
+    },
+    calculate: function(data, specificUseCaseId = null) {
+        const ucId = specificUseCaseId || data.currentUseCaseId;
+        const uc = data.useCases[ucId];
+        const sourceMap = {}; 
         
-        group_nodes = [n for n in component_nodes if n['group'] == group]
-        default_currents = {n['id']: get_default_current_uA(n) for n in group_nodes}
-        st.session_state.operating_modes[group] = {
-            "Default": {
-                "currents_uA": default_currents,
-                "note": "Default operating mode."
+        data.sources.forEach(s => {
+            const activeModeName = (uc.sources && uc.sources[s.name]) ? uc.sources[s.name] : "ON";
+            let activeMode = s.modes[activeModeName];
+            if (!activeMode) activeMode = { vOut: 0, iq: 0, eff: 85 }; 
+            sourceMap[s.name] = { def: s, modeName: activeModeName, vOut: activeMode.vOut, iq: activeMode.iq, eff: activeMode.eff, input: s.input };
+        });
+
+        let railReport = {};
+        data.sources.forEach(s => { railReport[s.name] = { loadCurrent: 0, inputCurrent: 0, state: sourceMap[s.name].modeName, connectedComponents: [] }; });
+
+        data.connections.forEach(conn => {
+            const weights = uc.components[conn.comp];
+            const comp = data.components.find(c => c.name === conn.comp);
+            if (comp && weights) {
+                let avgNodeCurrent = 0;
+                Object.keys(weights).forEach(mode => {
+                    const duty = weights[mode] || 0;
+                    if(duty > 0 && comp.modes[mode]) {
+                        const i = comp.modes[mode][conn.node] || 0;
+                        avgNodeCurrent += i * (duty / 100.0);
+                    }
+                });
+                if(railReport[conn.rail]) {
+                    railReport[conn.rail].loadCurrent += avgNodeCurrent;
+                    if(avgNodeCurrent > 0) railReport[conn.rail].connectedComponents.push(conn.comp);
+                }
             }
-        }
+        });
 
-    st.session_state.component_group_notes = {group: "" for group in all_comp_groups}
+        const sortedRails = data.sources.slice().sort((a, b) => this.calculateRailDepth(b.name, sourceMap) - this.calculateRailDepth(a.name, sourceMap));
+        sortedRails.forEach(src => {
+            const r = railReport[src.name]; const p = sourceMap[src.name]; const def = p.def;
+            if (def.type === "SWITCH" && p.vOut > 0) { const parent = sourceMap[p.input]; if (parent) p.vOut = parent.vOut; }
+            const Iq = parseFloat(p.iq); const Iout = r.loadCurrent; const Vout = parseFloat(p.vOut);
 
-    # --- 4. 建立 Use Cases (使用新的預設邏輯) ---
-    default_comp_settings = {}
-    for group in all_comp_groups:
-        group_modes = st.session_state.operating_modes.get(group, {})
-        
-        # 建立一個所有模式為 0 的基礎字典
-        default_ratio_dict = {mode: 0 for mode in group_modes}
-
-        if "Default" in group_modes:
-            default_ratio_dict["Default"] = 100 # 預設使用 "Default"
-        elif group_modes:
-            # 如果沒有 "Default"，使用第一個可用的模式
-            first_mode = list(group_modes.keys())[0]
-            default_ratio_dict[first_mode] = 100
-        
-        default_comp_settings[group] = default_ratio_dict
-            
-    default_ps_settings = {ps['id']: "On" for ps in power_source_nodes}
-    default_use_case_settings = {"components": default_comp_settings, "power_sources": default_ps_settings}
-    
-    new_use_case_names = [
-        "On-wrist stationary, BLE connected", "On-wrist stationary, BLE connected, Inductive button active",
-        "On-wrist, BLE very fast advertising", "Off-wrist, BLE advertising", "On-wrist active, BLE connected",
-        "Sync, BLE connected fast with payload", "Sync, BLE connected fast no payload", "Live data (steps + HR)",
-        "Incoming text notifications", "Incoming call notifications", "Alarm", "Goal celebration",
-        "Quick View - Turn on display", "Quick View - Turn on display - ECG", "Double Tap - Turn on display",
-        "Button Press - Turn on display", "Single Tap - View stats", "Reminder to move - alert",
-        "Reminder to move - celebration", "NFC Transit Pass Only", "NFC Payment Transaction (NFC incremental without Display)",
-        "NFC Payment Transaction (Display + vibe without NFC)", "6-Axis Accel Exercise", "Inkling Incremental - logging data",
-        "Inkling Incremental - BLE sync", "Vibe feedback incremental power on inductive button press",
-        "Touch Timeout UI active", "On-wrist active, GPS", "Lead Imp sEDA", "Always On Display",
-        "NLP cloud processing", "Display On", "SNORE DETECT", "VOICE/SOUND DETECT", "KEYWORD DETECT",
-        "Touch LP Active Mode"
-    ]
-
-    st.session_state.use_cases = {}
-    for name in new_use_case_names:
-        st.session_state.use_cases[name] = copy.deepcopy(default_use_case_settings)
-    
-    st.session_state.active_use_case = new_use_case_names[0]
-    
-    # --- 5. User Profiles (包含 DOU Specs) ---
-    st.session_state.battery_capacity_mAh = 64.5
-    st.session_state.battery_note = ""
-    
-    all_use_case_names = list(st.session_state.use_cases.keys())
-    empty_profile = {name: 0 for name in all_use_case_names}
-    
-    # (您貼上的表格會在這裡被處理)
-    all_profiles_data = {
-        "Typical User": {
-            "On-wrist stationary, BLE connected": 36000,
-            "On-wrist active, BLE connected": 21600,
-            "Always On Display": 28800
-        },
-        "Heavy User": {
-            "On-wrist stationary, BLE connected": 18000,
-            "Always On Display": 50400,
-            "On-wrist active, GPS": 7200,
-            "6-Axis Accel Exercise": 10800
-        },
-        "Light User": {
-            "Off-wrist, BLE advertising": 57600,
-            "On-wrist stationary, BLE connected": 28800
-        }
+            if (def.type === "BATTERY") r.inputCurrent = 0;
+            else if (p.modeName === "OFF") r.inputCurrent = Iq;
+            else if (def.type === "LDO" || def.type === "SWITCH") r.inputCurrent = Iout + Iq;
+            else {
+                const inputSrc = sourceMap[p.input];
+                if(inputSrc) {
+                    const Vin = parseFloat(inputSrc.vOut); const Eff = parseFloat(p.eff)/100;
+                    if (Vin > 0 && Eff > 0 && Vout > 0) r.inputCurrent = (Iout > 0) ? ((Vout * Iout) / (Vin * Eff)) + Iq : Iq;
+                    else r.inputCurrent = Iq;
+                } else r.inputCurrent = Iq;
+            }
+            if(p.input && railReport[p.input]) railReport[p.input].loadCurrent += r.inputCurrent;
+            r.finalVout = Vout; r.activeEff = p.eff;
+        });
+        return { report: railReport, sorted: sortedRails.reverse(), errors: [] };
+    },
+    calculateComponentBreakdown: function(data, ucId) {
+        const res = this.calculate(data, ucId); 
+        const uc = data.useCases[ucId || data.currentUseCaseId];
+        let compPower = {}, totalLoadPower = 0;
+        data.components.forEach(c => compPower[c.name] = { totalMW: 0, totalmA: 0 });
+        data.connections.forEach(conn => {
+            const weights = uc.components[conn.comp];
+            const comp = data.components.find(c => c.name === conn.comp);
+            if (comp && weights) {
+                let avgNodeCurrent = 0;
+                Object.keys(weights).forEach(mode => { const duty = weights[mode] || 0; if (duty > 0 && comp.modes[mode]) avgNodeCurrent += (comp.modes[mode][conn.node] || 0) * (duty / 100.0); });
+                const railInfo = res.report[conn.rail];
+                const railVout = railInfo ? railInfo.finalVout : 0;
+                if(avgNodeCurrent > 0) { const p = railVout * avgNodeCurrent; compPower[conn.comp].totalMW += p; compPower[conn.comp].totalmA += avgNodeCurrent; totalLoadPower += p; }
+            }
+        });
+        return { byComponent: compPower, totalMW: totalLoadPower };
     }
+};
 
-    st.session_state.user_profiles = {}
-    st.session_state.profile_dou_specs = {} 
+// --- DATA & INIT ---
+const USE_CASE_NAMES = [ 
+    "On-wrist stationary, BLE connected", "On-wrist stationary, BLE connected, Inductive button active", "On-wrist, BLE very fast advertising", "Off-wrist, BLE advertising", 
+    "On-wrist active, BLE connected", "Sync, BLE connected fast with payload", "Sync, BLE connected fast no payload", "Live data (steps + HR)", 
+    "Incoming text notifications", "Incoming call notifications", "Alarm", "Goal celebration", "Quick View - Turn on display", 
+    "Quick View - Turn on display - ECG", "Double Tap - Turn on display", "Button Press - Turn on display", "Single Tap - View stats", 
+    "Reminder to move - alert", "Reminder to move - celebration", "NFC Transit Pass Only", "NFC Payment Transaction (NFC incremental without Display)", 
+    "NFC Payment Transaction (Display + vibe without NFC)", "6-Axis Accel Exercise", "Inkling Incremental - logging data", "Inkling Incremental - BLE sync", 
+    "Vibe feedback incremental power on inductive button press", "Touch Timeout UI active", "On-wrist active, GPS", "Lead Imp sEDA", 
+    "Always On Display", "NLP cloud processing", "Display On", "SNORE DETECT", "VOICE/SOUND DETECT", "KEYWORD DETECT", "Touch LP Active"
+];
+const DEFAULT_DATA = {
+    projectName: "Tracker Gen 3",
+    components: [
+        { name: "AFE", modes: { "Active": { "TX": 12000, "RX": 2000 }, "Standby": { "TX": 0, "RX": 100 }, "Off": { "TX": 0, "RX": 0 } } },
+        { name: "MCU", modes: { "Active": { "Core": 10000, "1V8": 2000 }, "Sleep": { "Core": 500, "1V8": 100 }, "Off": { "Core": 0, "1V8": 0 } } },
+        { name: "Display", modes: { "Active": { "DIS_OVDD": 5000, "DIS_OVSS": 5000, "DIS_AVDD": 1000 }, "Off": { "DIS_OVDD": 0, "DIS_OVSS": 0, "DIS_AVDD": 0 } } }
+    ],
+    sources: [
+        { name: "VSYS", type: "BATTERY", input: null, eff: 100, modes: { "ON": { vOut: 3.85, iq: 0, eff: 100 } } },
+        { name: "PMIC_BUCK_1V8", type: "BUCK", input: "VSYS", eff: 85, modes: { "ON": { vOut: 1.8, iq: 10, eff: 85 }, "OFF": { vOut: 0, iq: 1, eff: null } } },
+        { name: "PMIC_BB", type: "BOOST", input: "VSYS", eff: 80, modes: { "ON": { vOut: 3.9, iq: 10, eff: 80 }, "OFF": { vOut: 0, iq: 1, eff: null } } },
+        { name: "PMIC_LDO1", type: "LDO", input: "VSYS", eff: null, modes: { "ON": { vOut: 1.8, iq: 5, eff: null }, "OFF": { vOut: 0, iq: 1, eff: null } } },
+        { name: "PMIC_LDO2", type: "LDO", input: "PMIC_BB", eff: null, modes: { "ON": { vOut: 3.5, iq: 5, eff: null }, "OFF": { vOut: 0, iq: 1, eff: null } } },
+        { name: "OVDD", type: "BOOST", input: "VSYS", eff: 80, modes: { "ON": { vOut: 3.3, iq: 15, eff: 80 }, "OFF": { vOut: 0, iq: 1, eff: null } } },
+        { name: "OVSS", type: "BUCK-BOOST", input: "VSYS", eff: 80, modes: { "ON": { vOut: 3.3, iq: 15, eff: 80 }, "OFF": { vOut: 0, iq: 1, eff: null } } },
+        { name: "AVDD_3V3", type: "LDO", input: "VSYS", eff: null, modes: { "ON": { vOut: 3.3, iq: 5, eff: null }, "OFF": { vOut: 0, iq: 1, eff: null } } }
+    ],
+    connections: [
+        { comp: "AFE", node: "TX", rail: "PMIC_LDO2" }, { comp: "AFE", node: "RX", rail: "PMIC_LDO1" }, 
+        { comp: "MCU", node: "Core", rail: "PMIC_BUCK_1V8" }, { comp: "MCU", node: "1V8", rail: "PMIC_BUCK_1V8" },
+        { comp: "Display", node: "DIS_OVDD", rail: "OVDD" }, { comp: "Display", node: "DIS_OVSS", rail: "OVSS" }, { comp: "Display", node: "DIS_AVDD", rail: "AVDD_3V3" }
+    ],
+    useCases: {}, profiles: [], currentUseCaseId: USE_CASE_NAMES[0]
+};
 
-    for profile_name, hours_dict in all_profiles_data.items():
-        clean_profile = copy.deepcopy(empty_profile)
-        clean_profile.update(hours_dict)
-        st.session_state.user_profiles[profile_name] = clean_profile
-        st.session_state.profile_dou_specs[profile_name] = 7.0 
+USE_CASE_NAMES.forEach(name => {
+    DEFAULT_DATA.useCases[name] = { components: {}, sources: {} };
+    DEFAULT_DATA.components.forEach(c => DEFAULT_DATA.useCases[name].components[c.name] = { "Active": 0, "Off": 100 });
+});
 
-    st.session_state.active_user_profile = list(st.session_state.user_profiles.keys())[0]
-    
-    st.session_state.initialized = True
+const PRESET_PROFILES = [
+    { name: "P75 User", target: 7.0 }, { name: "P90 User", target: 9.0 },
+    { name: "AOD mode", target: 2.0 }, { name: "GPS (25mins)", target: 1.4 },
+    { name: "GPS (continuous)", target: 0.21 }
+];
+PRESET_PROFILES.forEach(p => { let w = {}; USE_CASE_NAMES.forEach(u => w[u] = 0); DEFAULT_DATA.profiles.push({ name: p.name, targetDays: p.target, weights: w }); });
 
-initialize_data()
+STATE = JSON.parse(JSON.stringify(DEFAULT_DATA));
 
-# ---
-# 核心功能函數 (Core Functions)
-# ---
-
-def get_node_by_id(node_id):
-    return next((n for n in st.session_state.power_tree_data['nodes'] if n['id'] == node_id), None)
-
-def apply_use_case(use_case_name_override=None):
-    if use_case_name_override:
-        active_uc_name = use_case_name_override
-    else:
-        active_uc_name = st.session_state.get('active_use_case', list(st.session_state.use_cases.keys())[0])
-        if active_uc_name not in st.session_state.use_cases:
-            active_uc_name = list(st.session_state.use_cases.keys())[0]
-            st.session_state.active_use_case = active_uc_name
-
-    active_uc = st.session_state.use_cases[active_uc_name]
-    
-    # --- 【已修改】 quiescent_current_uA ---
-    ps_settings = active_uc.get("power_sources", {})
-    for node in st.session_state.power_tree_data['nodes']:
-        if node['type'] == 'power_source':
-            ps_mode_name = ps_settings.get(node['id'], "On")
-            if ps_mode_name not in st.session_state.power_source_modes.get(node['id'], {}):
-                ps_mode_name = "On" 
-            
-            mode_params = st.session_state.power_source_modes[node['id']][ps_mode_name]
-            node['output_voltage'] = mode_params['output_voltage']
-            node['efficiency'] = mode_params['efficiency']
-            node['quiescent_current_uA'] = mode_params['quiescent_current_uA'] # <-- 已重命名
-
-    # --- 【已修改】 讀取 uA 並除以 1000 ---
-    comp_settings = active_uc.get("components", {}) 
-    for node in st.session_state.power_tree_data['nodes']:
-        if node['type'] == 'component':
-            group = node['group']
-            group_ratios = comp_settings.get(group)
-            
-            if group_ratios:
-                source_node = get_node_by_id(node.get('input_source_id'))
-                current_voltage = 0.0
-                if source_node:
-                    current_voltage = source_node.get('output_voltage', 0.0)
-
-                weighted_power = 0.0
-                
-                for mode_name, ratio in group_ratios.items():
-                    if ratio > 0:
-                        # 1. 讀取 uA
-                        current_uA = st.session_state.operating_modes.get(group, {}).get(
-                            mode_name, {}
-                        ).get('currents_uA', {}).get(node['id'], 0.0) # <-- 讀取 currents_uA
-                        
-                        # 2. 轉換為 mA (uA / 1000) 來計算 mW
-                        power_for_mode = current_voltage * (current_uA / 1000.0)
-                        
-                        weighted_power += power_for_mode * (ratio / 100.0)
-                
-                node['power_consumption'] = weighted_power
-            else:
-                node['power_consumption'] = 0.0
-
-def calculate_power(use_case_name_override=None):
-    apply_use_case(use_case_name_override)
-    nodes = st.session_state.power_tree_data['nodes']
-    
-    memo = {}
-
-    def recursive_power_calc(node_id, visited_nodes):
-        if node_id in memo:
-            return memo[node_id]
-        if node_id in visited_nodes:
-            st.error(f"檢測到循環依賴: {node_id}")
-            return 0
-        
-        visited_nodes.add(node_id)
-        node = get_node_by_id(node_id)
-        if not node: return 0
-        if node['type'] == 'component':
-            source = get_node_by_id(node.get('input_source_id'))
-            if source and source['output_voltage'] == 0:
-                return 0.0
-            return node.get('power_consumption', 0)
-        
-        total_downstream_power = sum(
-            recursive_power_calc(downstream_node['id'], visited_nodes.copy())
-            for downstream_node in nodes if downstream_node.get('input_source_id') == node_id
-        )
-        node['output_power_total'] = total_downstream_power
-        
-        efficiency = node.get('efficiency', 1.0)
-        input_power_from_load = total_downstream_power / efficiency if efficiency > 0 else 0
-        
-        input_source = get_node_by_id(node.get('input_source_id'))
-        input_voltage = input_source['output_voltage'] if input_source else node['output_voltage']
-        
-        # --- 【已修改】 讀取 uA 並除以 1000 ---
-        quiescent_current_uA = node.get('quiescent_current_uA', 0.0)
-        quiescent_power = input_voltage * (quiescent_current_uA / 1000.0) # <-- 除以 1000
-        
-        total_input_power = input_power_from_load + quiescent_power
-        node['input_power'] = total_input_power
-        
-        memo[node_id] = total_input_power
-        return total_input_power
-
-    root_nodes = [n for n in nodes if n.get('input_source_id') is None]
-    total_system_power_mW = sum(recursive_power_calc(root['id'], set()) for root in root_nodes)
-    return total_system_power_mW
-
-
-def get_vsys_referred_power_contributions(node_list):
-
-    # 內部輔助函數 (保持不變)
-    def trace_power_to_root(load_mW, start_node_id):
-        current_node = get_node_by_id(start_node_id)
-        power = load_mW
-        while current_node and current_node.get('input_source_id') is not None:
-            parent_node = get_node_by_id(current_node.get('input_source_id'))
-            efficiency = current_node.get('efficiency', 1.0)
-            power = power / efficiency if efficiency > 0 else 0
-            current_node = parent_node
-        return power
-
-    contributions = []
-    
-    # --- 1. 計算所有「元件負載」的 Vsys 參考功耗 ---
-    # (這部分已包含「工作功耗」+「效率損耗」)
-    component_nodes = [n for n in node_list if n['type'] == 'component']
-    for node in component_nodes:
-        if node.get('power_consumption', 0) > 0:
-            component_load_mW = node['power_consumption']
-            vsys_referred_power = trace_power_to_root(component_load_mW, node.get('input_source_id'))
-            
-            label = node['group'] # 以 Group 為單位
-            contributions.append({
-                "source": label, 
-                "power_mW": vsys_referred_power, 
-                "type": "Component Load"
-            })
-
-    # --- 2. 計算所有「靜態電流 (Iq) 損耗」的 Vsys 參考功耗 ---
-    power_source_nodes = [n for n in node_list if n['type'] == 'power_source']
-    for node in power_source_nodes:
-        
-        quiescent_current_uA = node.get('quiescent_current_uA', 0.0)
-        if quiescent_current_uA > 0:
-            parent_node = get_node_by_id(node.get('input_source_id'))
-            if parent_node:
-                input_voltage = parent_node.get('output_voltage', 0.0)
-                parent_id_to_trace_from = parent_node.get('id')
-            else:
-                input_voltage = node.get('output_voltage', 0.0) 
-                parent_id_to_trace_from = None 
-
-            iq_load_mW = input_voltage * (quiescent_current_uA / 1000.0) # 轉回 mW
-            vsys_referred_iq_power = trace_power_to_root(iq_load_mW, parent_id_to_trace_from)
-
-            if vsys_referred_iq_power > 0.0001:
-                label = f"{node['label']} (Iq Loss)"
-                contributions.append({
-                    "source": label,
-                    "power_mW": vsys_referred_iq_power,
-                    "type": "Quiescent Loss"
-                })
-
-
-
-    if not contributions:
-        return pd.DataFrame(columns=["source", "power_mW", "type"])
-        
-    df = pd.DataFrame(contributions)
-
-    # --- 3. GroupBy (現在加總所有類型) ---
-    # 我們需要加總 Component Load (依群組) 和 Quiescent Loss (依節點)
-    df_components = df[df['type'] == 'Component Load']
-    df_losses = df[df['type'] == 'Quiescent Loss'] # 只選 Iq Loss
-    
-    if not df_components.empty:
-        df_components_grouped = df_components.groupby('source').agg(
-            power_mW=('power_mW', 'sum'),
-            type=('type', 'first')
-        ).reset_index()
-    else:
-        df_components_grouped = pd.DataFrame(columns=['source', 'power_mW', 'type'])
-    
-    # 將加總後的 Component 和「所有獨立的 Iq 損耗項」重新組合
-    final_df = pd.concat([df_components_grouped, df_losses], ignore_index=True)
-    
-    return final_df
-
-def calculate_average_profile_breakdown(profile_name):
-    """
-    計算一個 User Profile 的「加權平均」元件功耗佔比。
-    """
-    if profile_name not in st.session_state.user_profiles:
-        return pd.DataFrame(columns=["source", "power_mW", "type"])
-    
-    profile_data = st.session_state.user_profiles[profile_name]
-    total_seconds = sum(profile_data.values())
-    if total_seconds == 0:
-        total_seconds = 86400 # 避免除以零
-
-    total_contributions = defaultdict(float)
-    contribution_types = {} # 用來儲存 "Component Load" vs "Quiescent Loss"
-
-    # 1. 遍歷 Profile 中的所有 Use Case 及其秒數
-    for uc_name, seconds in profile_data.items():
-        if seconds <= 0:
-            continue
-        
-        # 2. 呼叫 calculate_power() 來為「這一個」Use Case 設定 power_tree 狀態
-        # (注意：這會呼叫 apply_use_case)
-        calculate_power(use_case_name_override=uc_name)
-        
-        # 3. 取得「這一個」Use Case 的功耗分佈
-        df_uc_breakdown = get_vsys_referred_power_contributions(st.session_state.power_tree_data['nodes'])
-        
-        # 4. 計算此 Use Case 中，每個元件貢獻的「能量」(mW-s)，並加總
-        for _, row in df_uc_breakdown.iterrows():
-            source_name = row['source']
-            power_mW = row['power_mW']
-            energy_mW_s = power_mW * seconds # (功耗 * 時間 = 能量)
-            
-            total_contributions[source_name] += energy_mW_s
-            
-            if source_name not in contribution_types:
-                contribution_types[source_name] = row['type']
-
-    if not total_contributions:
-         return pd.DataFrame(columns=["source", "power_mW", "type"])
-
-    # 5. 將總能量 (mW-s) 除以總時間 (s)，換算回「平均功耗 (mW)」
-    avg_contributions_data = []
-    for source, total_energy in total_contributions.items():
-        avg_power = total_energy / total_seconds
-        avg_contributions_data.append({
-            "source": source,
-            "power_mW": avg_power,
-            "type": contribution_types.get(source, "Unknown")
-        })
-        
-    return pd.DataFrame(avg_contributions_data)
-
-# ===============================================================
-#  側邊欄 UI (Sidebar UI)
-# ===============================================================
-with st.sidebar:
-    
-    components.html(
-    """
-    <script>
-    window.addEventListener("beforeunload", function (e) {
-        var confirmationMessage = "您有未儲存的修改，確定要離開嗎？";
-        e.returnValue = confirmationMessage;
-        return confirmationMessage;
+window.sanitizeDataStructure = function() {
+    STATE.components.forEach(c => {
+        if(c.enabled === undefined) c.enabled = true;
+        if(!c.note) c.note = "";
+        if(!c.modeNotes) c.modeNotes = {};
     });
-    </script>
-    """,
-    height=0,
-    )
-    
-    st.header("Display Settings")
-    theme_options = ["Light", "Dark"]
-    current_theme_index = theme_options.index(st.session_state.theme)
-    selected_theme = st.radio(
-        "Select Page Theme",
-        options=theme_options,
-        index=current_theme_index,
-        key="theme_selector",
-        horizontal=True
-    )
-    if st.session_state.theme != selected_theme:
-        st.session_state.theme = selected_theme
-        st.rerun()
-
-    st.markdown("---")
-    st.header("設定檔管理")
-
-    with st.expander("儲存目前設定", expanded=False):
-        state_to_save = {
-            'power_tree_data': st.session_state.power_tree_data,
-            'max_id': st.session_state.max_id,
-            'group_colors': st.session_state.group_colors,
-            'operating_modes': st.session_state.operating_modes,
-            'power_source_modes': st.session_state.power_source_modes,
-            'use_cases': st.session_state.use_cases,
-            'battery_capacity_mAh': st.session_state.battery_capacity_mAh,
-            'user_profiles': st.session_state.user_profiles,
-            'component_group_notes': st.session_state.component_group_notes,
-            'battery_note': st.session_state.battery_note,
-            'profile_dou_specs': st.session_state.profile_dou_specs # <-- 【新增】 確保 Spec 被儲存
+    STATE.sources.forEach(s => { 
+        if (!s.modes) s.modes = { "ON": { vOut: s.vOut, iq: s.iq, eff: s.eff }, "OFF": { vOut: 0, iq: 0.0001, eff: null } };
+        else Object.keys(s.modes).forEach(m => { if (s.modes[m].eff === undefined) s.modes[m].eff = s.eff !== undefined ? s.eff : 85; });
+    });
+    const bat = STATE.sources.find(s => s.name === "VBAT");
+    if(bat) {
+        bat.name = "VSYS";
+        STATE.sources.forEach(s => { if(s.input === "VBAT") s.input = "VSYS"; });
+        STATE.connections.forEach(c => { if(c.rail === "VBAT") c.rail = "VSYS"; });
+    }
+    if (!STATE.profiles || STATE.profiles.length === 0) {
+        STATE.profiles = [];
+        if (STATE.userProfile && Object.keys(STATE.userProfile).length > 0) {
+            STATE.profiles.push({ name: "Legacy User", targetDays: 5, weights: JSON.parse(JSON.stringify(STATE.userProfile)) });
+        } else {
+            PRESET_PROFILES.forEach(p => { let w={}; USE_CASE_NAMES.forEach(u=>w[u]=0); STATE.profiles.push({name:p.name, targetDays:p.target, weights:w}); });
         }
-        
-        try:
-            json_data = json.dumps(state_to_save, indent=4)
-        except Exception as e:
-            st.error(f"轉換 JSON 失敗: {e}")
-            json_data = "{}"
-
-        st.download_button(
-           label="下載設定檔 (.json)",
-           data=json_data,
-           file_name='power_model_config.json',
-           mime='application/json',
-        )
-
-    with st.expander("讀取設定檔", expanded=False):
-        uploaded_file = st.file_uploader(
-            "上傳您的 .json 設定檔",
-            type=['json'],
-            key="config_uploader"
-        )
-        
-        if uploaded_file is not None:
-            if st.button("確認載入此設定檔"):
-                try:
-                    file_content = uploaded_file.getvalue().decode("utf-8")
-                    loaded_data = json.loads(file_content)
-                    
-                    required_keys = ['power_tree_data', 'user_profiles']
-                    if not (all(key in loaded_data for key in required_keys) and ('device_modes' in loaded_data or 'use_cases' in loaded_data)):
-                        st.error("錯誤：上傳的檔案格式不正確或缺少必要的鍵。")
-                    else:
-                        if 'device_modes' in loaded_data and 'use_cases' not in loaded_data:
-                            loaded_data['use_cases'] = loaded_data.pop('device_modes')
-                            
-                        for key, value in loaded_data.items():
-                            st.session_state[key] = value
-                        
-                        st.session_state.initialized = True 
-                        st.success("設定已成功載入！頁面將自動刷新。")
-                        st.rerun()
-                except json.JSONDecodeError:
-                    st.error("錯誤：無法解析 JSON 檔案。請確認檔案內容是否為有效的 JSON 格式。")
-                except Exception as e:
-                    st.error(f"讀取檔案時發生錯誤: {e}")
-
-# === 側邊欄結束 ===
-
-# === 側邊欄結束 ===
-
-# ===============================================================
-#  主內容頁面 (Main Content)
-# ===============================================================
-
-tabs = st.tabs(["Power Tree", "Component Management", "Power Source Management", "Use Case Management", "Battery Life Estimation", "Profile Breakdown"])
-
-calculate_power(st.session_state.active_use_case)
-
-with tabs[0]:
-    st.header("Power Consumption Analysis")
-    
-    st.subheader("Use Case Selection")
-    
-    use_case_list = list(st.session_state.use_cases.keys())
-    active_use_case = st.session_state.get('active_use_case', use_case_list[0])
-    try:
-        current_index = use_case_list.index(active_use_case)
-    except ValueError:
-        current_index = 0
-
-    selected_use_case = st.selectbox(
-        "Select Use Case to Display", 
-        options=use_case_list, 
-        index=current_index, 
-        key="use_case_selector", 
-        label_visibility="collapsed"
-    )
-    
-    if st.session_state.active_use_case != selected_use_case:
-        st.session_state.active_use_case = selected_use_case
-        st.rerun()
-    
-    power_placeholder = st.empty()
-    current_placeholder = st.empty()
-    
-    with st.expander("Show / Hide Power Tree Visualizer", expanded=False):
-        st.markdown("### Power Tree")
-        graph_placeholder = st.empty()
-    
-    st.markdown("---")
-    st.subheader("Vsys Power Consumption Distribution")
-
-    df_contributions = get_vsys_referred_power_contributions(st.session_state.power_tree_data['nodes'])
-
-    if not df_contributions.empty:
-        total_calculated_power = df_contributions['power_mW'].sum()
-        if total_calculated_power > 0:
-            df_contributions['percentage'] = (df_contributions['power_mW'] / total_calculated_power)
-        else:
-            df_contributions['percentage'] = 0.0
-
-        df_main = df_contributions[df_contributions['percentage'] >= 0.01].copy()
-        other_power = df_contributions[df_contributions['percentage'] < 0.01]['power_mW'].sum()
-        other_percentage = df_contributions[df_contributions['percentage'] < 0.01]['percentage'].sum()
-
-        if other_power > 0:
-            other_df = pd.DataFrame([{"source": "Others (<1%)", "power_mW": other_power, "type": "Others", "percentage": other_percentage}])
-            df_chart = pd.concat([df_main, other_df], ignore_index=True)
-        else:
-            df_chart = df_main
-
-        if st.session_state.theme == "Dark":
-            pie_text_color = "white"
-        else:
-            pie_text_color = "black"
-
-        base = alt.Chart(df_chart).encode(
-           theta=alt.Theta("power_mW:Q", stack=True)
-        ).properties(
-           title="Breakdown of Total Vsys Power Draw",
-           height=600
-        )
-        
-        pie = base.mark_arc(outerRadius=200, innerRadius=0).encode(
-            # --- 【已修改】 圖例標題 ---
-            color=alt.Color("source:N", title="Contribution Source"), # <-- 從 "Power Source" 改為 "Contribution Source"
-            # --- 【修改結束】 ---
-            order=alt.Order("percentage:Q", sort="descending"),
-            tooltip=["source", alt.Tooltip("power_mW:Q", format=".2f"), alt.Tooltip("percentage:Q", format=".1%")]
-        )
-        text = base.mark_text(radius=220).encode(
-            text=alt.Text("percentage:Q", format=".1%"),
-            order=alt.Order("percentage:Q", sort="descending"),
-            color=alt.value(pie_text_color)
-        )
-        
-        chart = pie + text
-        st.altair_chart(chart, use_container_width=True)
-        
-        st.markdown("##### Contribution Data Table (Vsys-Referred)")
-        st.dataframe(
-            df_contributions.sort_values(by="power_mW", ascending=False).set_index("source"),
-            column_config={
-                "power_mW": st.column_config.NumberColumn("Power (mW)", format="%.3f"),
-                "type": "Source Type",
-                "percentage": st.column_config.ProgressColumn("Percentage", format="%.3f", min_value=0, max_value=1)
-            },
-            width='stretch'
-        )
-    else:
-        st.info("No power consumption data to display for the pie chart.")
-        
-
-# --- 【tabs[1]】(【已修改】標籤為 uA，儲存 uA) ---
-with tabs[1]:
-    st.header("Component Management")
-    all_groups = sorted(list(set(n['group'] for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component')))
-    
-    if not all_groups:
-        st.info("請先新增元件。")
-    else:
-        selected_group = st.selectbox("Choose Component", options=all_groups, key="cm_group_selector")
-        
-        if 'component_group_notes' in st.session_state:
-             st.session_state.component_group_notes[selected_group] = st.text_area(
-                f"Note for {selected_group}", 
-                value=st.session_state.component_group_notes.get(selected_group, ""), 
-                key=f"base_note_comp_{selected_group}"
-            )
-        else:
-            st.warning("`component_group_notes` 尚未初始化，請檢查 initialize_data 函數。")
-            
-        st.markdown("---")
-        
-        st.subheader(f"Component Current for {selected_group}")
-        group_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component' and n['group'] == selected_group]
-        
-        if selected_group in st.session_state.operating_modes:
-            num_modes = len(st.session_state.operating_modes[selected_group])
-            
-            for mode_name, mode_data in list(st.session_state.operating_modes[selected_group].items()):
-                with st.expander(f"{mode_name}", expanded=False):
-                    for node in group_nodes:
-                        
-                        source_id = node.get('input_source_id')
-                        source_label = "N/A"
-                        if source_id:
-                            source_node = get_node_by_id(source_id)
-                            if source_node:
-                                source_label = source_node.get('label', source_id)
-                        
-                        widget_key = f"current_{selected_group}_{mode_name}_{node['id']}"
-
-                        if widget_key in st.session_state:
-                            current_val_for_widget = st.session_state[widget_key]
-                        else:
-                            current_val_for_widget = float(mode_data.get('currents_uA', {}).get(node['id'], 0.0))
-                        
-                        new_label_text = f"Current (uA) - {node['endpoint']} {source_label}"
-                        
-                        st.number_input(
-                            new_label_text,
-                            min_value=0.0,
-                            value=current_val_for_widget,
-                            key=widget_key,
-                            format="%.3f"
-                        )
-                        
-                        mode_data['currents_uA'][node['id']] = st.session_state[widget_key]
-
-                    st.markdown("---")
-                    mode_data['note'] = st.text_area("Mode Note", value=mode_data.get("note", ""), key=f"note_{selected_group}_{mode_name}")
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        new_name = st.text_input("Rename Mode", value=mode_name, key=f"rename_{selected_group}_{mode_name}", label_visibility="collapsed")
-                    with col2:
-                        if st.button("Rename", key=f"rename_btn_{selected_group}_{mode_name}"):
-                            if new_name and new_name != mode_name and new_name not in st.session_state.operating_modes[selected_group]:
-                                st.session_state.operating_modes[selected_group][new_name] = st.session_state.operating_modes[selected_group].pop(mode_name)
-                                for uc in st.session_state.use_cases.values():
-                                    group_ratios = uc["components"].get(selected_group) 
-                                    if group_ratios and mode_name in group_ratios:
-                                        group_ratios[new_name] = group_ratios.pop(mode_name)
-                                st.rerun()
-
-                    is_default_only_mode = (mode_name == "Default" and num_modes == 1)
-                    # (已更新) 擴展 Display Module 的基礎模式列表
-                    display_base_modes = ["AOD mode", "NBM (no finger)", "NBM (1 finger)", "Idle mode", "Active - 60Hz", "AOD - 15 Hz"]
-                    is_display_module_default = (selected_group == "Display Module" and mode_name in display_base_modes)
-
-                    if not is_default_only_mode and mode_name != "Default" and not is_display_module_default:
-                        with st.expander("🗑️ 刪除此模式"):
-                            st.warning(f"此操作將永久刪除 '{mode_name}' 模式，無法復原。")
-                            if st.button(f"確認永久刪除 '{mode_name}'", key=f"delete_confirm_{selected_group}_{mode_name}", type="primary"):
-                                fallback_mode = "Default" if "Default" in st.session_state.operating_modes[selected_group] else list(st.session_state.operating_modes[selected_group].keys())[0]
-                                for uc in st.session_state.use_cases.values():
-                                    group_ratios = uc["components"].get(selected_group)
-                                    if group_ratios and mode_name in group_ratios:
-                                        deleted_ratio = group_ratios.pop(mode_name)
-                                        group_ratios[fallback_mode] = group_ratios.get(fallback_mode, 0) + deleted_ratio
-                                del st.session_state.operating_modes[selected_group][mode_name]
-                                st.rerun()
-                    elif (is_display_module_default or (mode_name == "Default" and not is_default_only_mode)) :
-                            with st.expander("🗑️ 刪除此模式", expanded=False):
-                                st.info(f"無法刪除基礎模式 ('{mode_name}')。")
-        
-        with st.expander("➕ Add New Mode", expanded=False):
-            new_mode_name = st.text_input("New Mode Name", key=f"new_mode_{selected_group}")
-            if st.button("Add Mode", key=f"add_mode_btn_{selected_group}", type="secondary"):
-                if new_mode_name and new_mode_name not in st.session_state.operating_modes.get(selected_group, {}):
-                    st.session_state.operating_modes.setdefault(selected_group, {})[new_mode_name] = {
-                        "currents_uA": {n['id']: 0.0 for n in st.session_state.power_tree_data['nodes'] 
-                                   if n['type'] == 'component' and n['group'] == selected_group},
-                        "note": ""
-                    }
-                    st.rerun()
-                elif not new_mode_name:
-                    st.error("模式名稱不可為空。")
-                else:
-                    st.error(f"模式名稱 '{new_mode_name}' 已存在。")
-
-    st.markdown("---")
-    st.subheader("Component & Group Settings")
-
-    with st.expander("➕ Add New Component"):
-        with st.form(key="add_comp_form", clear_on_submit=True):
-            new_group = st.text_input("元件群組名稱", "New Group")
-            new_endpoint = st.text_input("電源端點名稱", "New Endpoint")
-            power_sources_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
-            power_source_options = {n['id']: n['label'] for n in power_sources_nodes}
-            selected_ps_id = st.selectbox("連接到哪個電源？", options=power_source_options.keys(), format_func=lambda x: power_source_options.get(x, "N/A"))
-            
-            source_label_new = power_source_options.get(selected_ps_id, 'N/A')
-            new_current = st.number_input(
-                f"'Default' 模式電流 (uA) ({source_label_new})", 
-                min_value=0.0, 
-                value=1000.0, 
-                format="%.3f"
-            )
-
-            submitted = st.form_submit_button("確認新增元件")
-            
-            if submitted:
-                new_id = f"node_{st.session_state.max_id + 1}"
-                new_node_data = {"id": new_id, "type": "component"}
-                new_node_data.update({"group": new_group, "endpoint": new_endpoint, "power_consumption": 0.0, "input_source_id": selected_ps_id})
-                
-                if new_group not in st.session_state.operating_modes:
-                    st.session_state.operating_modes[new_group] = {"Default": {"currents_uA": {}, "note": "Default operating mode."}}
-                    if 'component_group_notes' not in st.session_state:
-                         st.session_state.component_group_notes = {}
-                    st.session_state.component_group_notes[new_group] = ""
-
-                st.session_state.operating_modes[new_group]["Default"]["currents_uA"][new_id] = new_current
-                
-                if new_group not in st.session_state.group_colors:
-                    st.session_state.group_colors[new_group] = next(DEFAULT_COLORS)
-                for uc in st.session_state.use_cases.values():
-                    if new_group not in uc["components"]:
-                        uc["components"][new_group] = {"Default": 100}
-                
-                st.session_state.power_tree_data['nodes'].append(new_node_data)
-                st.session_state.max_id += 1
-                st.success(f"已新增元件: {new_group} - {new_endpoint}")
-                st.rerun()
-
-    # --- 【START：已簡化的「編輯元件」區塊】 ---
-    with st.expander("✏️ Edit / Delete Component"):
-        nodes_list = st.session_state.power_tree_data['nodes']
-        def format_node_for_display_comp(node_id):
-            node = get_node_by_id(node_id)
-            if not node: return "N/A"
-            return f"{node['group']} - {node['endpoint']}"
-        
-        component_nodes = sorted([n for n in nodes_list if n['type'] == 'component'], key=lambda x: (x['group'], x['endpoint']))
-        component_node_ids = [n['id'] for n in component_nodes]
-        
-        if component_node_ids:
-            selected_node_id = st.selectbox("選擇要編輯的元件", options=component_node_ids, format_func=format_node_for_display_comp, key="edit_comp_selector")
-            node_to_edit = get_node_by_id(selected_node_id)
-            
-            if node_to_edit:
-                original_group = node_to_edit['group']
-                edited_group = st.text_input("群組名稱", original_group, key=f"edit_group_{selected_node_id}")
-                edited_endpoint = st.text_input("端點名稱", node_to_edit['endpoint'], key=f"edit_endpoint_{selected_node_id}")
-                
-                power_sources = [n for n in nodes_list if n['type'] == 'power_source']
-                ps_options = {n['id']: n['label'] for n in power_sources}
-                current_source_id = node_to_edit.get('input_source_id')
-                ps_ids = list(ps_options.keys())
-                default_index = ps_ids.index(current_source_id) if current_source_id in ps_ids else 0
-                selected_ps_id_edit = st.selectbox("連接到哪個電源？", options=ps_ids, format_func=ps_options.get, index=default_index, key=f"edit_comp_source_{selected_node_id}")
-                
-                # --- 【已移除】「'Default' 模式電流」的相關邏輯 ---
-
-                if st.button("更新元件", key=f"update_comp_{selected_node_id}"):
-                    node_to_edit['endpoint'] = edited_endpoint
-                    node_to_edit['input_source_id'] = selected_ps_id_edit
-                    
-                    # --- 【已移除】更新 Default 電流的邏輯 ---
-
-                    if original_group != edited_group:
-                        if edited_group not in st.session_state.operating_modes:
-                            st.session_state.operating_modes[edited_group] = {"Default": {"currents_uA": {}, "note": "Default operating mode."}}
-                            st.session_state.group_colors[edited_group] = next(DEFAULT_COLORS)
-                        
-                        # 將所有模式的電流資料從舊群組轉移到新群組
-                        for op_mode in st.session_state.operating_modes.get(original_group, {}).values():
-                            current_val = op_mode["currents_uA"].pop(selected_node_id, None)
-                            if current_val is not None:
-                                # 找到新群組的對應模式 (假設名稱相同)
-                                if op_mode_name in st.session_state.operating_modes.get(edited_group, {}):
-                                    st.session_state.operating_modes[edited_group][op_mode_name]["currents_uA"][selected_node_id] = current_val
-                                else:
-                                    # 如果新群組沒有這個模式，加到 Default
-                                    st.session_state.operating_modes[edited_group]["Default"]["currents_uA"][selected_node_id] = current_val
-
-                        for dm in st.session_state.use_cases.values():
-                            if original_group in dm["components"]:
-                                dm["components"][edited_group] = dm["components"].pop(original_group)
-                        node_to_edit['group'] = edited_group
-                    
-                    st.success("已更新元件")
-                    st.rerun()
-        else:
-            st.info("沒有可編輯的元件。")
-    # --- 【END：簡化結束】 ---
-
-    with st.expander("🎨 Group Color Management"):
-        all_groups_for_color = sorted(list(set(n['group'] for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component')))
-        for group in all_groups_for_color:
-            st.session_state.group_colors[group] = st.color_picker(
-                f"'{group}' 群組顏色", st.session_state.group_colors.get(group, '#CCCCCC'), key=f"color_{group}"
-            )
-            
-    with st.expander("🖨️ Clone Component Group"):
-        
-        all_groups_list = sorted(list(set(n['group'] for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component')))
-        if not all_groups_list:
-            st.info("No component groups to clone.")
-        else:
-            group_to_clone = st.selectbox(
-                "Select group to clone", 
-                options=all_groups_list, 
-                key="clone_group_src"
-            )
-            
-            new_group_name = st.text_input(
-                "New group name", 
-                value=f"{group_to_clone} (Copy)", 
-                key="clone_group_name"
-            )
-
-            if st.button("Clone Group", key="clone_group_btn"):
-                if not new_group_name:
-                    st.error("New group name cannot be empty.")
-                elif new_group_name == group_to_clone:
-                    st.error("New group name cannot be the same as the original.")
-                elif new_group_name in all_groups_list:
-                    st.error(f"The group name '{new_group_name}' already exists.")
-                else:
-                    try:
-                        nodes_to_clone = [n for n in st.session_state.power_tree_data['nodes'] if n.get('group') == group_to_clone]
-                        new_nodes = []
-                        node_id_map = {} 
-                        
-                        for node in nodes_to_clone:
-                            new_node_id = f"node_{st.session_state.max_id + 1}"
-                            st.session_state.max_id += 1
-                            node_id_map[node['id']] = new_node_id
-                            
-                            new_node = copy.deepcopy(node)
-                            new_node['id'] = new_node_id
-                            new_node['group'] = new_group_name
-                            new_nodes.append(new_node)
-                        
-                        st.session_state.power_tree_data['nodes'].extend(new_nodes)
-
-                        modes_to_clone = copy.deepcopy(st.session_state.operating_modes.get(group_to_clone, {}))
-                        new_op_modes = {}
-                        
-                        for mode_name, mode_data in modes_to_clone.items():
-                            new_currents_dict = {}
-                            old_currents_dict = mode_data.get("currents_uA", {})
-                            
-                            for old_node_id, current_val in old_currents_dict.items():
-                                new_node_id = node_id_map.get(old_node_id)
-                                if new_node_id:
-                                    new_currents_dict[new_node_id] = current_val
-                            
-                            mode_data["currents_uA"] = new_currents_dict
-                            new_op_modes[mode_name] = mode_data
-                        
-                        st.session_state.operating_modes[new_group_name] = new_op_modes
-
-                        for uc in st.session_state.use_cases.values():
-                            if new_group_name not in uc["components"]:
-                                uc["components"][new_group_name] = {"Default": 100}
-
-                        st.session_state.component_group_notes[new_group_name] = st.session_state.component_group_notes.get(group_to_clone, "")
-                        st.session_state.group_colors[new_group_name] = next(DEFAULT_COLORS)
-
-                        st.success(f"Successfully cloned '{group_to_clone}' to '{new_group_name}' with {len(new_nodes)} new nodes.")
-                        st.rerun()
-                    
-                    except Exception as e:
-                        st.error(f"An error occurred during cloning: {e}")
-
-# --- 【tabs[2]】(【已修改】標籤為 uA) ---
-with tabs[2]:
-    st.header("Power Source Management")
-    all_power_sources = sorted([n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source'], key=lambda x: x['label'])
-    
-    if not all_power_sources:
-        st.info("Please Add The Power Source")
-    else:
-        ps_options = {ps['id']: ps['label'] for ps in all_power_sources}
-        selected_ps_id = st.selectbox("Choose Power Source", options=ps_options.keys(), format_func=ps_options.get, key="psm_ps_selector")
-        
-        base_node = get_node_by_id(selected_ps_id)
-        if base_node: 
-            current_note = base_node.get("note", "")
-            new_note = st.text_area(
-                f"Note for {base_node['label']}", 
-                value=current_note,
-                key=f"base_note_ps_{selected_ps_id}"
-            )
-            base_node["note"] = new_note
-            
-        st.subheader(f"Edit Modes for {ps_options[selected_ps_id]}")
-        
-        for mode_name, params in list(st.session_state.power_source_modes.get(selected_ps_id, {}).items()):
-            if 'note' not in params: params['note'] = ""
-            if 'quiescent_current_uA' not in params: params['quiescent_current_uA'] = 0.0 # 相容舊檔
-            
-            with st.expander(f"{mode_name}", expanded=False):
-                
-                key_v = f"psm_v_{selected_ps_id}_{mode_name}"
-                key_eff = f"psm_eff_{selected_ps_id}_{mode_name}"
-                key_iq = f"psm_iq_{selected_ps_id}_{mode_name}"
-                key_note = f"psm_note_{selected_ps_id}_{mode_name}"
-
-                if is_off_mode := params.get('output_voltage') == 0 and params.get('efficiency') == 0:
-                    st.text_input("Output Voltage (V)", value="0.0 (Off)", disabled=True, key=key_v)
-                    st.text_input("Efficiency (%)", value="N/A", disabled=True, key=key_eff)
-                    
-                    current_iq = params['quiescent_current_uA'] # <-- 已修改
-                    st.number_input("Quiescent Current (uA)", min_value=0.0, value=current_iq, key=key_iq, format="%.3f") # <-- 已修改
-                    params['quiescent_current_uA'] = st.session_state[key_iq] # <-- 已修改
-
-                else:
-                    current_v = params['output_voltage']
-                    st.number_input("Output Voltage (V)", value=current_v, key=key_v) 
-                    
-                    current_eff = params['efficiency'] * 100.0
-                    st.number_input("Efficiency (%)", min_value=0.0, max_value=100.0, value=current_eff, key=key_eff)
-
-                    current_iq = params['quiescent_current_uA'] # <-- 已修改
-                    st.number_input("Quiescent Current (uA)", min_value=0.0, value=current_iq, key=key_iq, format="%.3f") # <-- 已修改
-
-                    params['output_voltage'] = st.session_state[key_v]
-                    params['efficiency'] = st.session_state[key_eff] / 100.0
-                    params['quiescent_current_uA'] = st.session_state[key_iq] # <-- 已修改
-                
-                current_note_val = params.get("note", "")
-                st.text_area("Note", value=current_note_val, key=key_note)
-                params['note'] = st.session_state[key_note]
-                
-                st.markdown("---")
-                col1, col2 = st.columns(2)
-                with col1:
-                    new_name = st.text_input("Rename Mode", value=mode_name, key=f"rename_ps_{selected_ps_id}_{mode_name}", label_visibility="collapsed")
-                with col2:
-                    if st.button("Rename", key=f"rename_ps_btn_{selected_ps_id}_{mode_name}"):
-                        if new_name and new_name != mode_name and new_name not in st.session_state.power_source_modes[selected_ps_id]:
-                            st.session_state.power_source_modes[selected_ps_id][new_name] = st.session_state.power_source_modes[selected_ps_id].pop(mode_name)
-                            for uc in st.session_state.use_cases.values():
-                                if uc.get("power_sources", {}).get(selected_ps_id) == mode_name:
-                                    uc["power_sources"][selected_ps_id] = new_name
-                            
-                            old_keys = [key_v, key_eff, key_iq, key_note]
-                            for k in old_keys:
-                                if k in st.session_state: del st.session_state[k]
-                            st.rerun()
-
-                if len(st.session_state.power_source_modes[selected_ps_id]) > 1 and mode_name not in ["On", "Off"]:
-                    with st.expander(f"🗑️ 刪除模式 '{mode_name}'"):
-                        st.warning(f"此操作將永久刪除 '{mode_name}' 模式，無法復原。")
-                        if st.button(f"確認永久刪除 '{mode_name}'", key=f"del_psm_confirm_{selected_ps_id}_{mode_name}", type="primary"):
-                            fallback_mode = "On" if "On" in st.session_state.power_source_modes[selected_ps_id] else list(st.session_state.power_source_modes[selected_ps_id].keys())[0]
-                            for uc in st.session_state.use_cases.values():
-                                if uc.get("power_sources", {}).get(selected_ps_id) == mode_name:
-                                    uc["power_sources"][selected_ps_id] = fallback_mode
-                            del st.session_state.power_source_modes[selected_ps_id][mode_name]
-                            
-                            old_keys = [key_v, key_eff, key_iq, key_note]
-                            for k in old_keys:
-                                if k in st.session_state: del st.session_state[k]
-                            st.rerun()
-                
-        with st.expander("➕ Add New Mode", expanded=False):
-            new_ps_mode_name = st.text_input("New Mode Name", key=f"new_ps_mode_{selected_ps_id}")
-            if st.button("Add Mode", key=f"add_ps_mode_{selected_ps_id}", type="secondary"):
-                if new_ps_mode_name and new_ps_mode_name not in st.session_state.power_source_modes.get(selected_ps_id, {}):
-                    st.session_state.power_source_modes.setdefault(selected_ps_id, {})[new_ps_mode_name] = {
-                        "output_voltage": 0.0, 
-                        "efficiency": 0.9, 
-                        "quiescent_current_uA": 0.0, # <-- 已修改
-                        "note": ""
-                    }
-                    st.rerun()
-                elif not new_ps_mode_name:
-                    st.error("模式名稱不可為空。")
-                else:
-                    st.error(f"模式名稱 '{new_ps_mode_name}' 已存在。")
-
-    st.markdown("---")
-    st.subheader("Power Source Settings")
-
-    with st.expander("➕ Add New Power Source"):
-        with st.form(key="add_ps_form", clear_on_submit=True):
-            new_label = st.text_input("新電源名稱", "New Power Source")
-            ps_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
-            ps_options = {n['id']: n['label'] for n in ps_nodes}
-            ps_options_with_none = {"": "無 (設為根節點)", **ps_options}
-            new_input_source_id = st.selectbox("連接到哪個上游電源？", options=ps_options_with_none.keys(), format_func=lambda x: ps_options_with_none.get(x, "N/A"))
-            new_efficiency_percent = st.number_input("'On' 模式效率 (%)", 0.0, 100.0, 90.0, step=1.0)
-            new_output_voltage = st.number_input("'On' 模式輸出電壓 (V)", min_value=0.0, value=1.8)
-            new_quiescent_current = st.number_input("靜態電流 (uA)", min_value=0.0, value=10.0, format="%.3f") # <-- 已修改
-            
-            submitted = st.form_submit_button("確認新增電源")
-
-            if submitted:
-                new_id = f"node_{st.session_state.max_id + 1}"
-                new_node_data = {"id": new_id, "type": "power_source"}
-                new_node_data.update({
-                    "label": new_label, "efficiency": new_efficiency_percent / 100.0, "output_voltage": new_output_voltage,
-                    "quiescent_current_uA": new_quiescent_current, "input_source_id": new_input_source_id if new_input_source_id else None # <-- 已修改
-                })
-                base_note = new_node_data.get("note", "")
-                st.session_state.power_source_modes[new_id] = {
-                    "On": {"output_voltage": new_output_voltage, "efficiency": new_efficiency_percent / 100.0, "quiescent_current_uA": new_quiescent_current, "note": base_note}, # <-- 已修改
-                    "Off": {"output_voltage": 0.0, "efficiency": 0.0, "quiescent_current_uA": new_quiescent_current, "note": "Device is off"} # <-- 已修改
-                }
-                for uc in st.session_state.use_cases.values():
-                    if new_id not in uc["power_sources"]:
-                        uc["power_sources"][new_id] = "On"
-                
-                st.session_state.power_tree_data['nodes'].append(new_node_data)
-                st.session_state.max_id += 1
-                st.success(f"已新增電源: {new_label}")
-                st.rerun()
-
-    with st.expander("✏️ Edit / Delete Power Source"):
-        nodes_list = st.session_state.power_tree_data['nodes']
-        def format_node_for_display_ps(node_id):
-            node = get_node_by_id(node_id)
-            if not node: return "N/A"
-            return node['label']
-        
-        power_source_nodes = sorted([n for n in nodes_list if n['type'] == 'power_source'], key=lambda x: x['label'])
-        power_source_node_ids = [n['id'] for n in power_source_nodes]
-        
-        if power_source_node_ids:
-            selected_node_id = st.selectbox("選擇要編輯的電源", options=power_source_node_ids, format_func=format_node_for_display_ps, key="edit_ps_selector")
-            node_to_edit = get_node_by_id(selected_node_id)
-            
-            if node_to_edit:
-                key_edit_v = f"edit_volt_{selected_node_id}"
-                key_edit_eff = f"edit_eff_{selected_node_id}"
-                key_edit_iq = f"edit_iq_{selected_node_id}"
-
-                edited_label = st.text_input("名稱", node_to_edit['label'], key=f"edit_label_{selected_node_id}")
-                upstream_ps = [n for n in nodes_list if n['type'] == 'power_source' and n['id'] != selected_node_id]
-                ups_options = {n['id']: n['label'] for n in upstream_ps}
-                ups_options_with_none = {"": "無 (設為根節點)", **ups_options}
-                current_ups_id = node_to_edit.get('input_source_id') or ""
-                ups_ids = list(ups_options_with_none.keys())
-                default_index = ups_ids.index(current_ups_id) if current_ups_id in ups_ids else 0
-                selected_ups_id_edit = st.selectbox("連接到哪個上游電源？", options=ups_ids, format_func=ups_options_with_none.get, index=default_index, key=f"edit_ps_source_{selected_node_id}")
-
-                on_mode_params = st.session_state.power_source_modes.get(selected_node_id, {}).get("On", {})
-                
-                if key_edit_eff not in st.session_state:
-                    st.session_state[key_edit_eff] = float(on_mode_params.get('efficiency', 0)) * 100
-                st.number_input("'On' 模式效率 (%)", 0.0, 100.0, step=1.0, key=key_edit_eff)
-                
-                if key_edit_v not in st.session_state:
-                    st.session_state[key_edit_v] = float(on_mode_params.get('output_voltage', 0))
-                st.number_input("'On' 模式輸出電壓 (V)", 0.0, key=key_edit_v)
-
-                if key_edit_iq not in st.session_state:
-                    st.session_state[key_edit_iq] = float(on_mode_params.get('quiescent_current_uA', 0)) # <-- 已修改
-                st.number_input("靜態電流 (uA)", min_value=0.0, format="%.3f", key=key_edit_iq) # <-- 已修改
-
-                if st.button("更新電源", key=f"update_ps_{selected_node_id}"):
-                    node_to_edit['label'] = edited_label
-                    node_to_edit['input_source_id'] = selected_ups_id_edit if selected_ups_id_edit else None
-                    
-                    edited_output_voltage = st.session_state[key_edit_v]
-                    edited_efficiency_percent = st.session_state[key_edit_eff]
-                    edited_quiescent_current = st.session_state[key_edit_iq] # <-- 已修改
-
-                    existing_on_note = st.session_state.power_source_modes.get(selected_node_id, {}).get("On", {}).get("note", "")
-                    st.session_state.power_source_modes[selected_node_id]["On"] = {
-                        "output_voltage": edited_output_voltage,
-                        "efficiency": edited_efficiency_percent / 100.0,
-                        "quiescent_current_uA": edited_quiescent_current, # <-- 已修改
-                        "note": existing_on_note
-                    }
-                    
-                    if "Off" in st.session_state.power_source_modes[selected_node_id]:
-                        st.session_state.power_source_modes[selected_node_id]["Off"]["quiescent_current_uA"] = edited_quiescent_current # <-- 已修改
-                    
-                    del st.session_state[key_edit_v]
-                    del st.session_state[key_edit_eff]
-                    del st.session_state[key_edit_iq]
-
-                    st.success("已更新電源")
-                    st.rerun()
-        else:
-            st.info("沒有可編輯的電源。")
-
-# --- 【tabs[3]】(Use Case Management) (保持不變) ---
-with tabs[3]:
-    st.header("Use Case Management")
-    
-    st.subheader("Edit Use Cases")
-    num_use_cases = len(st.session_state.use_cases)
-    
-    for uc_name, uc_settings in list(st.session_state.use_cases.items()):
-        with st.expander(f"{uc_name}", expanded=False):
-            
-            st.markdown("#### Component Settings")
-            all_comp_groups = sorted(list(st.session_state.operating_modes.keys()))
-            
-            for group in all_comp_groups:
-                
-                group_modes = list(st.session_state.operating_modes.get(group, {}).keys())
-                if not group_modes:
-                    st.warning(f"'{group}' 尚未在 ] 中定義任何 Component Mode。")
-                    continue
-                
-                current_ratios = uc_settings.get("components", {}).get(group, {})
-                
-                with st.expander(f"**{group}**"):
-                
-                    for mode in group_modes:
-                        if mode not in current_ratios: current_ratios[mode] = 0
-                    for mode in list(current_ratios.keys()):
-                        if mode not in group_modes: del current_ratios[mode]
-                    
-                    for mode_name in group_modes:
-                        left_column, _ = st.columns([1, 3]) 
-                        with left_column:
-                            sub_col1, sub_col2, sub_col3 = st.columns([2, 1, 1])
-                            with sub_col1:
-                                st.markdown(f"<p style='padding-top: 8px; padding-left: 20px;'>{mode_name}</p>", unsafe_allow_html=True)
-                            with sub_col2:
-                                current_ratios[mode_name] = st.number_input(
-                                    f"Ratio for {mode_name}", min_value=0, max_value=100, 
-                                    value=current_ratios.get(mode_name, 0),
-                                    step=1, key=f"uc_ratio_{uc_name}_{group}_{mode_name}", label_visibility="collapsed"
-                                )
-                            with sub_col3:
-                                st.markdown("<p style='padding-top: 8px;'>%</p>", unsafe_allow_html=True)
-                    
-                    uc_settings["components"][group] = current_ratios
-
-            st.markdown("---")
-            st.markdown("#### Power Source Settings")
-            all_ps_nodes = sorted([n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source'], key=lambda x: x['label'])
-            for ps_node in all_ps_nodes:
-                ps_modes = list(st.session_state.power_source_modes.get(ps_node['id'], {}).keys())
-                current_ps_mode = uc_settings.get("power_sources", {}).get(ps_node['id'], "On")
-                idx = ps_modes.index(current_ps_mode) if current_ps_mode in ps_modes else 0
-                
-                selected_ps_mode = st.selectbox(
-                    f"{ps_node['label']}", options=ps_modes, index=idx, key=f"uc_ps_select_{uc_name}_{ps_node['id']}"
-                )
-                uc_settings["power_sources"][ps_node['id']] = selected_ps_mode
-            
-            
-            st.markdown("---") 
-            if st.button(f"Clone this Use Case", key=f"clone_uc_{uc_name}", type="secondary"):
-                new_uc_name = f"{uc_name} (Copy)"
-                counter = 2
-                while new_uc_name in st.session_state.use_cases:
-                    new_uc_name = f"{uc_name} (Copy {counter})"
-                    counter += 1
-                new_uc_settings = copy.deepcopy(uc_settings)
-                st.session_state.use_cases[new_uc_name] = new_uc_settings
-                for profile in st.session_state.user_profiles.values():
-                    profile[new_uc_name] = 0
-                st.success(f"Cloned '{uc_name}' to '{new_uc_name}'.")
-                st.rerun()
-
-            
-            st.markdown("---")
-            st.markdown("##### Rename this Use Case")
-            
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                new_uc_name_input = st.text_input(
-                    "New use case name", 
-                    value=uc_name, 
-                    key=f"rename_uc_text_{uc_name}",
-                    label_visibility="collapsed"
-                )
-            with col2:
-                if st.button("Rename", key=f"rename_uc_btn_{uc_name}"):
-                    if new_uc_name_input == uc_name:
-                        st.toast("Name is the same.")
-                    elif new_uc_name_input in st.session_state.use_cases:
-                        st.error(f"Error: The name '{new_uc_name_input}' already exists.")
-                    else:
-                        st.session_state.use_cases[new_uc_name_input] = st.session_state.use_cases.pop(uc_name)
-                        
-                        for profile in st.session_state.user_profiles.values():
-                            if uc_name in profile:
-                                profile[new_uc_name_input] = profile.pop(uc_name)
-                        
-                        if st.session_state.active_use_case == uc_name:
-                            st.session_state.active_use_case = new_uc_name_input
-                        
-                        st.success(f"Renamed '{uc_name}' to '{new_uc_name_input}'.")
-                        st.rerun()
-
-            if num_use_cases > 1:
-                with st.expander(f"🗑️ Delete '{uc_name}'"):
-                    st.warning(f"此操作將永久刪除 '{uc_name}' Use Case，無法復原。")
-                    if st.button(f"確認永久刪除 '{uc_name}'", key=f"del_uc_confirm_{uc_name}", type="primary"):
-                        mode_to_delete = uc_name
-                        
-                        if st.session_state.active_use_case == mode_to_delete:
-                            del st.session_state.use_cases[mode_to_delete]
-                            st.session_state.active_use_case = list(st.session_state.use_cases.keys())[0]
-                        else:
-                            del st.session_state.use_cases[mode_to_delete]
-
-                        for profile in st.session_state.user_profiles.values():
-                            if mode_to_delete in profile:
-                                del profile[mode_to_delete]
-                        st.rerun()
-
-    with st.expander("➕ Add New Use Case", expanded=False):
-        new_uc_name = st.text_input("New Use Case Name", key="new_uc_name")
-        if st.button("Add Use Case", key="add_uc_btn", type="secondary"):
-            if new_uc_name and new_uc_name not in st.session_state.use_cases:
-                all_comp_groups = set(n['group'] for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'component')
-                all_ps_nodes = [n for n in st.session_state.power_tree_data['nodes'] if n['type'] == 'power_source']
-                
-                st.session_state.use_cases[new_uc_name] = {
-                    "components": {group: {"Default": 100} for group in all_comp_groups},
-                    "power_sources": {ps['id']: "On" for ps in all_ps_nodes}
-                }
-                for profile in st.session_state.user_profiles.values():
-                    profile[new_uc_name] = 0
-                st.rerun()
-            elif not new_uc_name:
-                st.error("Use Case 名稱不可為空。")
-            else:
-                st.error(f"Use Case '{new_uc_name}' 已存在。")
-
-# --- 【tabs[4]】(【已修改】顯示 uA) ---
-with tabs[4]:
-    st.header("Battery Life Estimation")
-
-    st.number_input("Battery Capacity (mAh)", min_value=0.0, value=st.session_state.battery_capacity_mAh, key="battery_capacity_input")
-    st.session_state.battery_capacity_mAh = st.session_state.battery_capacity_input
-
-    st.session_state.battery_note = st.text_area(
-        "Battery Notes", 
-        value=st.session_state.get("battery_note", ""),
-        key="battery_note_input",
-        placeholder="Enter notes about the battery, e.g., model number, age, test conditions..."
-    )
-
-    st.markdown("---")
-    st.subheader("1. Edit DOU Spec (Days)")
-    
-    all_profiles = list(st.session_state.user_profiles.keys())
-    spec_data = {}
-    for profile_name in all_profiles:
-        if profile_name not in st.session_state.profile_dou_specs:
-            st.session_state.profile_dou_specs[profile_name] = 7.0 
-        spec_data[profile_name] = st.session_state.profile_dou_specs[profile_name]
-
-    df_specs = pd.DataFrame(spec_data, index=["DOU spec (days)"])
-    
-    edited_specs_df = st.data_editor(
-        df_specs,
-        key="dou_spec_editor",
-        width='stretch',
-        column_config={
-            profile_name: st.column_config.NumberColumn(
-                label=profile_name,
-                min_value=0.0,
-                step=0.1,
-                format="%.1f"
-            ) for profile_name in all_profiles
-        }
-    )
-
-    st.session_state.profile_dou_specs = edited_specs_df.to_dict('records')[0]
-    
-    st.markdown("---")
-    st.subheader("2. Estimation Results Summary")
-
-    power_per_use_case = {uc: calculate_power(use_case_name_override=uc) for uc in st.session_state.use_cases}
-    vsys_node = get_node_by_id("battery")
-    vsys_voltage = vsys_node['output_voltage'] if vsys_node else 3.85
-
-    results_data = []
-    for profile_name, profile_data in st.session_state.user_profiles.items():
-        total_energy_mW_s = sum(power_per_use_case.get(uc_name, 0) * profile_data.get(uc_name, 0) for uc_name, seconds in profile_data.items())
-        total_seconds_in_profile = sum(profile_data.values())
-        
-        avg_power_mW = total_energy_mW_s / total_seconds_in_profile if total_seconds_in_profile > 0 else 0
-        avg_current_mA = avg_power_mW / vsys_voltage if vsys_voltage > 0 else 0
-        
-        if avg_current_mA > 0:
-            battery_life_days = (st.session_state.battery_capacity_mAh / avg_current_mA) / 24
-        else:
-            battery_life_days = 0 
-
-        profile_summary = {
-            "Profile": profile_name,
-            "Battery Life (Days)": battery_life_days,
-            "Avg. Power (mW)": avg_power_mW,
-            "Avg. Current (uA)": avg_current_mA * 1000.0
-        }
-        results_data.append(profile_summary)
-
-    if results_data:
-        df_results = pd.DataFrame(results_data).set_index('Profile')
-        df_results_T = df_results.T
-        dou_specs = st.session_state.profile_dou_specs 
-
-        def style_battery_life(col):
-            spec = dou_specs.get(col.name, 0) 
-            life = col["Battery Life (Days)"]
-            style = [''] * len(col)
-            if life >= spec:
-                style[0] = 'background-color: #2E7D32; color: white;' # Green
-            else:
-                style[0] = 'background-color: #D32F2F; color: white;' # Red
-            return style
-
-        # --- 【START：已修改的小數點位數】 ---
-        styled_df = df_results_T.style.apply(style_battery_life, axis=0).format({
-            "Battery Life (Days)": "{:.1f}",
-            "Avg. Power (mW)": "{:.1f}",
-            "Avg. Current (uA)": "{:.1f}"
-        })
-        # --- 【END：修改】 ---
-        
-        st.dataframe(styled_df, width='stretch')
-        
-    else:
-        st.info("No User Profiles found. Add one below.")
-
-    st.markdown("---")
-    st.subheader("Edit Use Case Seconds")
-
-    with st.expander("Edit Use Case Seconds per Profile (Table)", expanded=True):
-        
-        all_use_cases = list(st.session_state.use_cases.keys())
-        all_profiles = list(st.session_state.user_profiles.keys())
-        
-        data_for_editor = {}
-        for profile_name, profile_data in st.session_state.user_profiles.items():
-            profile_seconds = {uc: profile_data.get(uc, 0) for uc in all_use_cases}
-            data_for_editor[profile_name] = profile_seconds
-            
-        df_editor = pd.DataFrame(data_for_editor, index=all_use_cases)
-        df_editor.index.name = "Use Case"
-        
-        edited_df = st.data_editor(
-            df_editor,
-            key="profile_data_editor",
-            width='stretch',
-            column_config={
-                profile_name: st.column_config.NumberColumn(
-                    label=profile_name,
-                    min_value=0,
-                    max_value=86400,
-                    step=1,
-                    format="%d" 
-                ) for profile_name in all_profiles
+    }
+    Object.keys(STATE.useCases).forEach(ucId => {
+        const uc = STATE.useCases[ucId];
+        Object.keys(uc.components).forEach(cName => {
+            if(typeof uc.components[cName] === 'string') {
+                const val = uc.components[cName]; uc.components[cName] = {}; 
+                const comp = STATE.components.find(x=>x.name===cName);
+                if(comp) { Object.keys(comp.modes).forEach(m=>uc.components[cName][m]=0); uc.components[cName][val]=100; }
             }
-        )
+        });
+        STATE.components.forEach(comp => {
+            if(!comp.note) comp.note = "";
+            if(!comp.modeNotes) comp.modeNotes = {};
+            if (!uc.components[comp.name]) {
+                uc.components[comp.name] = {};
+                Object.keys(comp.modes).forEach(m => uc.components[comp.name][m] = 0);
+            }
+        });
+        if(!uc.sources) uc.sources = {};
+        STATE.sources.forEach(s => { if(!uc.sources[s.name]) uc.sources[s.name] = "ON"; });
+    });
+    if(typeof STATE.tab3Note === 'undefined') STATE.tab3Note = "";
+    if(typeof STATE.tab4Note === 'undefined') STATE.tab4Note = "";
+    if(typeof STATE.projectName === 'undefined') STATE.projectName = "Tracker Gen 3";
+    document.getElementById("projectNameInput").value = STATE.projectName;
+}
 
-        needs_update = False
-        for profile_name in edited_df.columns:
-            new_data = edited_df[profile_name].to_dict()
-            if st.session_state.user_profiles[profile_name] != new_data:
-                st.session_state.user_profiles[profile_name] = new_data
-                needs_update = True
+// --- RENDERERS ---
+window.renderUseCaseSelect = function() { document.querySelectorAll('.use-case-select').forEach(s => s.innerHTML = Object.keys(STATE.useCases).map(k => `<option value="${k}" ${k===STATE.currentUseCaseId?"selected":""}>${k}</option>`).join("")); }
+
+window.renderTab5_Controls = function(res) {
+    const uc = STATE.useCases[STATE.currentUseCaseId];
+    if(!uc) return;
+    document.getElementById("ucComponentBody").innerHTML = STATE.components.map(c => {
+        const isEnabled = (c.enabled !== false);
+        const rowClass = isEnabled ? "" : "text-muted bg-light";
+        const weights = uc.components[c.name];
+        let summary = [];
+        if(weights) Object.keys(weights).forEach(m => { if(weights[m] > 0) summary.push(`${m}: <b>${weights[m]}%</b>`); });
+        const summaryHtml = summary.length > 0 ? summary.join(", ") : "<span class='text-danger'>Not Configured</span>";
+        const btnHtml = isEnabled ? `<button class="btn btn-sm btn-outline-primary" onclick="window.openDutyCycleEditor('${c.name}')">Edit Duty</button>` : `<span class="badge bg-secondary">Disabled</span>`;
+        return `<tr class="${rowClass}"><td class="fw-bold">${c.name}</td><td class="small text-muted">${summaryHtml}</td><td>${btnHtml}</td></tr>`;
+    }).join("");
+
+    document.getElementById("ucSourceBody").innerHTML = STATE.sources.filter(s=>s.type!=="BATTERY").map(s=>{ 
+        const currentMode = (uc.sources && uc.sources[s.name]) ? uc.sources[s.name] : "ON";
+        const modeOpts = Object.keys(s.modes).map(m => `<option value="${m}" ${m===currentMode?"selected":""}>${m}</option>`).join("");
+        const rData = res.report[s.name];
+        const vOut = rData ? rData.finalVout : 0;
+        const isOff = (currentMode === "OFF" || vOut < 0.01);
+        let statusBadge = isOff ? '<span class="badge bg-secondary">Inactive</span>' : `<span class="badge bg-success">Active (${vOut}V)</span>`;
+        return `<tr><td>${s.name}</td><td><select class="form-select form-select-sm" onchange="STATE.useCases['${STATE.currentUseCaseId}'].sources['${s.name}']=this.value;window.refreshUI()">${modeOpts}</select></td><td>${statusBadge}</td></tr>`; 
+    }).join("");
+}
+
+window.renderSourceEditor = function() {
+    const c = document.getElementById("sourceEditorContainer"); c.innerHTML = ""; 
+    const types = ["BUCK", "BOOST", "LDO", "SWITCH", "BUCK-BOOST"];
+    STATE.sources.forEach(s => {
+        let mainContent = "";
+        if (s.type === "BATTERY") {
+            const vOut = s.modes["ON"] ? s.modes["ON"].vOut : 3.8;
+            mainContent = `<div class="row align-items-center g-2"><div class="col-md-2 fw-bold text-primary">${s.name}</div><div class="col-md-2"><span class="badge bg-secondary">BATTERY</span></div><div class="col-md-4"><div class="input-group input-group-sm"><span class="input-group-text">Voltage</span><input type="number" step="0.1" class="form-control" value="${vOut}" onchange="window.updateSourceMode('${s.name}','ON','vOut',this.value)"><span class="input-group-text">V</span></div></div><div class="col-md-4 text-muted small">Root Source</div></div>`;
+        } else {
+            let inputOpts = STATE.sources.filter(x => x.name !== s.name).map(x => `<option value="${x.name}" ${x.name===s.input?"selected":""}>${x.name}</option>`).join("");
+            let typeOpts = types.map(t => `<option value="${t}" ${t===s.type?"selected":""}>${t}</option>`).join("");
+            const isEffLocked = (s.type === 'LDO' || s.type === 'SWITCH');
+            let modesHtml = `<div class="table-responsive mt-2"><table class="table table-sm table-bordered mb-0 small bg-white"><thead class="table-light"><tr><th style="width:20%">Mode</th><th>Vout (V)</th><th>Eff (%)</th><th>Iq (uA)</th><th style="width:50px"></th></tr></thead><tbody>`;
+            Object.keys(s.modes).forEach(m => {
+                const isFixed = (m === "ON" || m === "OFF"); const isVoutDisabled = (s.type === "SWITCH"); 
+                modesHtml += `<tr><td>${m}</td><td><input type="number" step="0.1" class="form-control form-control-sm border-0 p-1" value="${s.modes[m].vOut}" ${isVoutDisabled?'disabled style="background:#e9ecef"':''} onchange="window.updateSourceMode('${s.name}','${m}','vOut',this.value)"></td><td><input type="number" step="1" class="form-control form-control-sm border-0 p-1" value="${s.modes[m].eff !== undefined && s.modes[m].eff !== null ? s.modes[m].eff : ''}" ${isEffLocked?'disabled placeholder="N/A" style="background:#e9ecef"':''} onchange="window.updateSourceMode('${s.name}','${m}','eff',this.value)"></td><td><input type="number" step="0.1" class="form-control form-control-sm border-0 p-1" value="${s.modes[m].iq}" onchange="window.updateSourceMode('${s.name}','${m}','iq',this.value)"></td><td class="text-center">${!isFixed ? `<i class="bi bi-trash text-danger" style="cursor:pointer" onclick="window.deleteSourceMode('${s.name}','${m}')"></i>` : ''}</td></tr>`;
+            });
+            modesHtml += `</tbody></table></div><div class="d-grid mt-1"><button class="btn btn-sm btn-light text-primary border-0" onclick="window.addNewSourceMode('${s.name}')"><i class="bi bi-plus"></i> Add Mode</button></div>`;
+            mainContent = `<div class="row align-items-center g-2"><div class="col-md-2"><strong class="clickable-node text-primary" onclick="window.renameSource('${s.name}')">${s.name}</strong></div><div class="col-md-2"><select class="form-select form-select-sm" onchange="window.updateSourceGlobal('${s.name}','type',this.value)">${typeOpts}</select></div><div class="col-md-2"><div class="input-group input-group-sm"><span class="input-group-text">In</span><select class="form-select" onchange="window.updateSourceGlobal('${s.name}','input',this.value)">${inputOpts}</select></div></div><div class="col-md-4"><button class="btn btn-sm btn-outline-secondary w-100" type="button" data-bs-toggle="collapse" data-bs-target="#modes_${sanitizeId(s.name)}"><i class="bi bi-sliders"></i> Vout, Eff and Iq setting</button></div><div class="col-md-2 text-end"><button class="btn btn-sm btn-outline-danger" onclick="window.deleteSource('${s.name}')"><i class="bi bi-trash"></i></button></div><div class="col-12 collapse" id="modes_${sanitizeId(s.name)}"><div class="card card-body bg-light border-0 p-2 mt-1">${modesHtml}</div></div></div>`;
+        }
+        c.innerHTML += `<div class="card shadow-sm"><div class="card-body py-2">${mainContent}</div></div>`;
+    });
+    document.getElementById("tab3NoteInput").value = STATE.tab3Note || "";
+}
+
+window.renderComponentEditor = function() {
+    const c = document.getElementById("componentEditorContainer"); c.innerHTML = "";
+    STATE.components.forEach(comp => {
+        const isEnabled = (comp.enabled !== false); 
+        const cardClass = isEnabled ? "" : "comp-disabled";
+        const checkState = isEnabled ? "checked" : "";
         
-        if needs_update:
-            st.rerun()
-
-        total_seconds_per_profile = edited_df.sum()
-        total_seconds_per_profile.name = "Total Seconds"
-        st.dataframe(total_seconds_per_profile, width='stretch')
+        let h = `<div class="card mb-3 shadow-sm ${cardClass}"><div class="card-header py-2 fw-bold d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center flex-grow-1">
+                <div class="form-check form-switch me-2">
+                    <input class="form-check-input" type="checkbox" ${checkState} onchange="window.toggleComponent('${comp.name}')">
+                </div>
+                <span class="clickable-node text-primary fw-bold" onclick="window.renameComponent('${comp.name}')" title="Click to Rename">${comp.name}</span>
+                <input type="text" class="form-control form-control-sm ms-2" style="max-width:200px;" placeholder="Remark..." value="${comp.note || ''}" onchange="window.updateComponentNote('${comp.name}', this.value)">
+            </div>
+            <button class="btn btn-outline-danger btn-sm py-0" onclick="window.deleteComponent('${comp.name}')">Delete</button></div><div class="card-body p-0"><table class="table table-sm mb-0 table-bordered">`;
         
-        invalid_profiles = total_seconds_per_profile[total_seconds_per_profile != 86400].index.tolist()
-        if invalid_profiles:
-            st.error(f"警告：以下 Profile 的總秒數不等於 86400： {', '.join(invalid_profiles)}")
+        Object.keys(comp.modes).forEach(m => {
+            const delBtn = `<i class="bi bi-trash text-danger clickable-node" style="font-size:1em" onclick="window.deleteComponentMode('${comp.name}', '${m}')" title="Delete Mode"></i>`;
+            h += `<tr><td class="bg-light align-middle" width="120"><span class="clickable-node fw-bold text-primary px-1" onclick="window.renameComponentMode('${comp.name}', '${m}')">${m}</span></td><td class="p-2">`;
+            Object.keys(comp.modes[m]).forEach(n => {
+                const noteVal = (comp.modeNotes && comp.modeNotes[m] && comp.modeNotes[m][n]) ? comp.modeNotes[m][n] : '';
+                h += `<div class="d-inline-flex align-items-center me-3 mb-2 p-1 border rounded bg-white">
+                        <span class="clickable-node small fw-bold me-2 px-1 text-primary" onclick="window.renameOrDeleteNode('${comp.name}', '${n}')">${n}</span>
+                        <input type="number" step="0.1" value="${comp.modes[m][n]}" class="form-control form-control-sm border-0 p-0 text-end" style="width:60px" onchange="window.updateCompMode('${comp.name}','${m}','${n}',this.value)">
+                        <span class="small text-muted ms-1 me-1">uA</span>
+                        <input type="text" class="form-control form-control-sm border-0 p-0 ps-1 text-muted bg-light" style="width:60px; font-size:0.8em;" placeholder="Note" value="${noteVal}" onchange="window.updateCompModeNote('${comp.name}','${m}','${n}',this.value)">
+                      </div>`;
+            });
+            h += `<button class="btn btn-sm btn-light border text-muted py-0 px-2 small" onclick="window.addNodeToComponent('${comp.name}', '${m}')">+</button></td><td class="align-middle text-center" width="40">${delBtn}</td></tr>`;
+        });
+        h += `</table></div><div class="card-footer p-1 text-center"><button class="btn btn-sm btn-outline-secondary border-0" onclick="window.addComponentMode('${comp.name}')"><i class="bi bi-plus-circle"></i> Add Mode</button></div></div>`;
+        c.innerHTML += h;
+    });
+}
 
-    st.markdown("---")
-    with st.expander("➕ Add / 🗑️ Delete Profile"):
-        
-        st.markdown("##### Delete a Profile")
-        profile_to_delete = st.selectbox(
-            "Select Profile to delete", 
-            options=[""] + list(st.session_state.user_profiles.keys()), 
-            key="delete_profile_select"
-        )
-        if st.button("Delete Selected Profile", type="primary"):
-            if profile_to_delete and profile_to_delete in st.session_state.user_profiles:
-                if len(st.session_state.user_profiles) > 1:
-                    del st.session_state.user_profiles[profile_to_delete]
-                    if profile_to_delete in st.session_state.profile_dou_specs:
-                        del st.session_state.profile_dou_specs[profile_to_delete]
-                    st.success(f"已刪除 Profile: '{profile_to_delete}'")
-                    st.rerun()
-                else:
-                    st.error("無法刪除最後一個 Profile。")
-            else:
-                st.warning("請選擇一個要刪除的 Profile。")
+window.renderConnectionEditor = function(){ 
+    const b=document.getElementById("connectionEditorBody"); b.innerHTML=""; 
+    STATE.connections.forEach((conn,i)=>{ 
+        let opts=STATE.sources.map(s=>`<option value="${s.name}" ${s.name===conn.rail?"selected":""}>${s.name}</option>`).join(""); 
+        b.innerHTML+=`<tr><td><strong>${conn.comp}</strong></td><td>${conn.node}</td><td><select class="form-select form-select-sm" onchange="STATE.connections[${i}].rail=this.value;window.refreshUI()">${opts}</select></td></tr>`; 
+    });
+    document.getElementById("tab4NoteInput").value = STATE.tab4Note || "";
+}
 
-        st.markdown("##### Add New Profile")
-        profile_name = st.text_input("New Profile Name", key="add_profile_name")
-        if st.button("Add Profile", type="secondary"):
-            if profile_name and profile_name not in st.session_state.user_profiles:
-                st.session_state.user_profiles[profile_name] = {uc_name: 0 for uc_name in st.session_state.use_cases}
-                st.session_state.profile_dou_specs[profile_name] = 7.0 
-                st.rerun()
-            elif not profile_name:
-                st.error("設定檔名稱不可為空。")
-            else:
-                st.error(f"設定檔 '{profile_name}' 已存在。")
+window.renderAnalysisTables = function(res, compRes) { 
+    const cBody = document.getElementById("componentTableBody"); cBody.innerHTML = ""; 
+    STATE.components.forEach(comp => { 
+        if(comp.enabled === false) return; 
+        const d = compRes.byComponent[comp.name]; 
+        const pct = compRes.totalMW > 0 ? (d.totalMW / compRes.totalMW * 100).toFixed(1) : "0.0"; 
+        const weights = STATE.useCases[STATE.currentUseCaseId].components[comp.name]; 
+        let mixStr = ""; 
+        if(weights) { 
+            const main = Object.keys(weights).reduce((a, b) => weights[a] > weights[b] ? a : b); 
+            mixStr = `${main} (${weights[main]}%)`; 
+        } 
+        cBody.innerHTML += `<tr><td class="fw-bold">${comp.name}</td><td><span class="badge bg-light text-dark border">${mixStr}</span></td><td>${d.totalmA.toFixed(1)}</td><td class="fw-bold text-primary">${d.totalMW.toFixed(1)}</td><td><div class="progress" style="height:15px"><div class="progress-bar bg-info" style="width:${pct}%">${pct}%</div></div></td></tr>`; 
+    }); 
+    const rBody = document.getElementById("analysisTableBody"); rBody.innerHTML = ""; 
+    res.sorted.forEach(src => { 
+        const r = res.report[src.name]; const def = STATE.sources.find(s=>s.name===src.name); 
+        rBody.innerHTML += `<tr class="${(r.state==='OFF'&&r.loadCurrent>0.001)?'row-error':''}"><td class="fw-bold text-start">${src.name}</td><td><span class="badge ${r.state==='OFF'?'bg-secondary':'bg-success'}">${r.state}</span></td><td>${parseFloat(r.finalVout).toFixed(2)}</td><td>${def.modes[r.state].eff||'-'}</td><td>${r.loadCurrent.toFixed(1)}</td><td class="fw-bold text-primary">${r.inputCurrent.toFixed(1)}</td><td class="small">${def.input||"-"}</td></tr>`; 
+    }); 
+}
 
-
-# --- 【tabs[5]】(新增的 Profile Breakdown) ---
-with tabs[5]:
-    st.header("Average Power Breakdown per Profile")
+window.renderMermaidTree = function(res) { 
+    if (!document.getElementById('tab1').classList.contains('active')) return; 
+    const el = document.getElementById('powerTreeDiagram'); 
+    if (typeof mermaid === 'undefined') { el.innerHTML = 'Mermaid not loaded'; return; } 
+    if (!res) res = window.PowerEngine.calculate(STATE); 
     
-    # 1. 讓使用者選擇要分析哪一個 Profile
-    profile_list = list(st.session_state.user_profiles.keys())
-    selected_profile = st.selectbox(
-        "Select a User Profile to analyze its breakdown",
-        options=profile_list,
-        key="profile_breakdown_selector"
-    )
-    
-    if selected_profile:
-        # 2. 呼叫新函數，計算加權平均
-        df_avg_contributions = calculate_average_profile_breakdown(selected_profile)
+    window.requestAnimationFrame(() => {
+        let g = `graph ${currentTreeDir};\n`; // [v8.2] Use variable for direction
+        g += 'classDef source fill:#e1f5fe,stroke:#01579b,stroke-width:2px;\n'; 
+        g += 'classDef component fill:#f3e5f5,stroke:#4a148c,stroke-width:1px;\n'; 
+        g += 'classDef sourceOff fill:#f0f0f0,stroke:#bdbdbd,stroke-width:2px,color:#9e9e9e;\n'; 
+        g += 'classDef compOff fill:#f9f9f9,stroke:#eeeeee,stroke-width:1px,color:#bdbdbd;\n'; 
+        g += 'classDef compIdle fill:#ffffff,stroke:#6610f2,stroke-width:2px,stroke-dasharray: 5 5;\n'; 
+        g += 'linkStyle default stroke:#6c757d,stroke-width:1px,fill:none;\n'; 
         
-        # 3. 渲染圖表和表格 (邏輯同 tabs[0])
-        if not df_avg_contributions.empty:
-            total_avg_power = df_avg_contributions['power_mW'].sum()
-            if total_avg_power > 0:
-                df_avg_contributions['percentage'] = (df_avg_contributions['power_mW'] / total_avg_power)
-            else:
-                df_avg_contributions['percentage'] = 0.0
-
-            df_main = df_avg_contributions[df_avg_contributions['percentage'] >= 0.01].copy()
-            other_power = df_avg_contributions[df_avg_contributions['percentage'] < 0.01]['power_mW'].sum()
-            other_percentage = df_avg_contributions[df_avg_contributions['percentage'] < 0.01]['percentage'].sum()
-
-            if other_power > 0:
-                other_df = pd.DataFrame([{"source": "Others (<1%)", "power_mW": other_power, "type": "Others", "percentage": other_percentage}])
-                df_chart = pd.concat([df_main, other_df], ignore_index=True)
-            else:
-                df_chart = df_main
-
-            if st.session_state.theme == "Dark":
-                pie_text_color = "white"
-            else:
-                pie_text_color = "black"
-
-            base = alt.Chart(df_chart).encode(
-               theta=alt.Theta("power_mW:Q", stack=True)
-            ).properties(
-               title=f"Average Power Breakdown for '{selected_profile}'", # 動態標題
-               height=500
-            )
-            pie = base.mark_arc(outerRadius=180, innerRadius=0).encode(
-                color=alt.Color("source:N", title="Contribution Source"),
-                order=alt.Order("percentage:Q", sort="descending"),
-                tooltip=["source", alt.Tooltip("power_mW:Q", format=".3f"), alt.Tooltip("percentage:Q", format=".1%")] # 顯示 3 位小數
-            )
-            text = base.mark_text(radius=200).encode(
-                text=alt.Text("percentage:Q", format=".1%"),
-                order=alt.Order("percentage:Q", sort="descending"),
-                color=alt.value(pie_text_color)
-            )
-            chart = pie + text
-            st.altair_chart(chart, use_container_width=True)
+        STATE.sources.forEach(s => { const sId = window.sanitizeId(s.name); const rData = res.report[s.name]; let isOff = (rData && rData.finalVout <= 0.01); const className = isOff ? 'sourceOff' : 'source'; if(s.input) { const currentVal = rData ? rData.inputCurrent : 0; const style = currentVal > 1 ? `-- ${currentVal.toFixed(0)}uA -->` : `-.->`; g += `${window.sanitizeId(s.input)} ${style} ${sId}(${s.name});\n`; } else { g += `${sId}(${s.name});\n`; } g += `class ${sId} ${className};\n`; }); 
+        
+        const uc = STATE.useCases[STATE.currentUseCaseId]; 
+        STATE.connections.forEach(c => { 
+            const compObj = STATE.components.find(x => x.name === c.comp);
             
-            st.markdown("##### Average Contribution Data Table (Vsys-Referred)")
-            st.dataframe(
-                df_avg_contributions.sort_values(by="power_mW", ascending=False).set_index("source"),
-                column_config={
-                    "power_mW": st.column_config.NumberColumn("Avg. Power (mW)", format="%.3f"), # 顯示 3 位小數
-                    "type": "Source Type",
-                    "percentage": st.column_config.ProgressColumn("Percentage", format="%.3f", min_value=0, max_value=1)
-                },
-                width='stretch'
-            )
-        else:
-            st.info(f"No power consumption data found for profile '{selected_profile}'.")
+            // [v8.2] Hide disabled components completely
+            if(compObj && compObj.enabled === false) return; 
 
+            let lineCurrent = 0; const weights = uc.components[c.comp]; const comp = STATE.components.find(x => x.name === c.comp); 
+            if (weights && comp) { Object.keys(weights).forEach(mode => { if (comp.modes[mode]) lineCurrent += (comp.modes[mode][c.node] || 0) * ((weights[mode] || 0) / 100.0); }); } 
+            
+            const cNodeId = window.sanitizeId(c.comp + '_' + c.node); 
+            const railId = window.sanitizeId(c.rail); 
+            
+            const compClass = lineCurrent > 0 ? 'component' : 'compIdle'; 
+            const style = lineCurrent > 0 ? `-- ${lineCurrent.toFixed(0)}uA -->` : `-.->`; 
+            
+            g += `${railId} ${style} ${cNodeId}[${c.comp}<br>${c.node}];\n`; 
+            g += `class ${cNodeId} ${compClass};\n`; 
+        }); 
+        el.innerHTML = g; 
+        el.removeAttribute('data-processed'); 
+        try { mermaid.init(undefined, el); } catch(e) {} 
+    });
+}
 
-# ---
-# 在所有狀態更新後，執行最終的計算與渲染
-# ---
-total_power = calculate_power(st.session_state.active_use_case)
+window.safeRenderPowerPie = function(r) { const cvs = document.getElementById('powerPieChart'); if (!cvs || typeof Chart === 'undefined') return; if(powerChart) powerChart.destroy(); const l=Object.keys(r.byComponent).filter(k=>r.byComponent[k].totalMW>0); powerChart = new Chart(cvs.getContext('2d'), { type: 'doughnut', data: { labels:l, datasets: [{ data:l.map(k=>r.byComponent[k].totalMW), backgroundColor: ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b', '#858796'] }] } }); }
 
-power_placeholder.write(f"<strong>Total System Power:</strong> {total_power:.2f} mW", unsafe_allow_html=True)
-vsys_node = get_node_by_id("battery")
-if vsys_node and vsys_node.get('output_voltage', 0) > 0:
-    current_mA = total_power / vsys_node['output_voltage']
-    # 【已修改】顯示 uA，並顯示到整數
-    current_placeholder.write(f"<strong>Total Vsys Current:</strong> {current_mA * 1000.0:.0f} uA", unsafe_allow_html=True)
+// [v9.0] Vertex AI & Chat Functions
+window.toggleAuthFields = function() {
+    const provider = document.getElementById('aiProvider').value;
+    if(provider === 'studio') {
+        document.getElementById('field-apikey').classList.remove('d-none');
+        document.getElementById('field-vertex').classList.add('d-none');
+        document.getElementById('aiModel').value = 'gemini-1.5-pro';
+    } else {
+        document.getElementById('field-apikey').classList.add('d-none');
+        document.getElementById('field-vertex').classList.remove('d-none');
+        document.getElementById('aiModel').value = 'gemini-1.5-pro-001';
+    }
+}
 
-# 繪製 Power Tree
-if st.session_state.theme == "Dark":
-    graph_bgcolor = "black"
-    edge_color = "white"
-    font_color = "#CCCCCC"
-    table_border_color = "white"
-else: # Light theme
-    graph_bgcolor = "white"
-    edge_color = "black"
-    font_color = "#555555"
-    table_border_color = "black"
-
-dot = graphviz.Digraph(comment='Power Tree')
-dot.attr(rankdir='LR', splines='line', ranksep='0.5', nodesep='0.15', center='true', bgcolor=graph_bgcolor)
-dot.attr('edge', color=edge_color, fontname='Arial', fontsize='10', fontcolor=font_color)
-
-nodes = st.session_state.power_tree_data['nodes']
-for node in [n for n in nodes if n['type'] == 'power_source']:
-    pin_str = f"Pin: {node.get('input_power', 0):.2f}mW" if node.get('input_source_id') else "Pin: N/A"
-    pout_str = f"Pout: {node.get('output_power_total', 0):.2f}mW"
-    eff_str = f"eff: {node.get('efficiency', 1.0) * 100:.0f}%" if node.get('efficiency', 0) > 0 else "eff: N/A"
-    # 【已修改】顯示 uA
-    iq_str = f"Iq: {node.get('quiescent_current_uA', 0.0):.1f}uA"
+window.saveAISettings = function() {
+    const provider = document.getElementById('aiProvider').value;
+    const model = document.getElementById('aiModel').value;
+    const key = document.getElementById('aiApiKey').value;
+    const pid = document.getElementById('gcpProjectId').value;
+    const token = document.getElementById('gcpToken').value;
     
-    pin_pout_str = f'{pin_str} &nbsp;|&nbsp; {pout_str}'
-    details_html = f"{pin_pout_str}<BR/>{eff_str}<BR/>{iq_str}"
+    try {
+        localStorage.setItem('pm_ai_provider', provider);
+        localStorage.setItem('pm_ai_model', model);
+        if(key) localStorage.setItem('pm_ai_key', key);
+        if(pid) localStorage.setItem('pm_ai_pid', pid);
+        if(token) localStorage.setItem('pm_ai_token', token);
+        alert("Settings Saved!");
+    } catch(e) {
+        alert("Warning: Settings not saved (Sandboxed).");
+    }
+}
+
+window.loadAISettings = function() {
+    try {
+        const provider = localStorage.getItem('pm_ai_provider') || 'studio';
+        const model = localStorage.getItem('pm_ai_model');
+        const key = localStorage.getItem('pm_ai_key');
+        const pid = localStorage.getItem('pm_ai_pid');
+        
+        document.getElementById('aiProvider').value = provider;
+        window.toggleAuthFields();
+        if(model) document.getElementById('aiModel').value = model;
+        if(key) document.getElementById('aiApiKey').value = key;
+        if(pid) document.getElementById('gcpProjectId').value = pid;
+    } catch(e) { console.warn("LocalStorage access denied"); }
+}
+
+window.toggleChat = function() {
+    const panel = document.getElementById('chat-panel');
+    panel.style.display = (panel.style.display === 'flex') ? 'none' : 'flex';
+}
+
+window.getCompactState = function() {
+    const s = JSON.parse(JSON.stringify(STATE));
+    delete s.currentUseCaseId;
+    delete s.profiles; 
+    return s;
+}
+
+window.appendMessage = function(role, text) {
+    const div = document.createElement('div');
+    div.className = `msg msg-${role}`;
+    if (role === 'ai') {
+        div.innerHTML = marked.parse(text); 
+    } else {
+        div.innerText = text;
+    }
+    const body = document.getElementById('chatBody');
+    body.appendChild(div);
+    body.scrollTop = body.scrollHeight;
+}
+
+window.sendChatMessage = async function() {
+    const input = document.getElementById('chatInput');
+    const msg = input.value.trim();
+    if (!msg) return;
+
+    window.appendMessage('user', msg);
+    input.value = "";
     
-    table = (f'<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="{table_border_color}">'
-             f'<TR><TD BGCOLOR="#2196F3" ALIGN="CENTER"><B><FONT COLOR="white">{node["label"]}</FONT></B></TD></TR>'
-             f'<TR><TD ALIGN="CENTER" BGCOLOR="#FFFFFF"><FONT COLOR="black">{details_html}</FONT></TD></TR>'
-             f'</TABLE>')
-    dot.node(node['id'], label=f'<{table}>', shape='none')
+    const systemPrompt = `You are an expert Power Consumption Analyst. Here is the current system configuration (JSON): ${JSON.stringify(window.getCompactState())}. Answer strictly based on this data.`;
 
-with dot.subgraph(name='cluster_components') as c:
-    c.attr(rank='sink', style='invis')
-    components = [n for n in nodes if n['type'] == 'component']
-    components.sort(key=lambda x: x['group'])
-    for node in components:
-        group_color = st.session_state.group_colors.get(node['group'], "#CCCCCC")
-        power_details = f"Power: {node.get('power_consumption', 0):.2f}mW"
-        combined_details = f'{node["endpoint"]}<BR/>{power_details}'
-        table = (f'<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="{table_border_color}">'
-               f'<TR><TD BGCOLOR="{group_color}" ALIGN="CENTER"><B><FONT COLOR="white">{node["group"]}</FONT></B></TD></TR>'
-               f'<TR><TD ALIGN="CENTER" BGCOLOR="#FFFFFF"><FONT COLOR="black">{combined_details}</FONT></TD></TR>'
-               f'</TABLE>')
-        c.node(node['id'], label=f'<{table}>', shape='none')
+    chatHistory.push({ role: 'user', content: msg });
+    if (chatHistory.length > 10) chatHistory = chatHistory.slice(-10);
 
-for node in nodes:
-    if node.get('input_source_id'):
-        source = get_node_by_id(node['input_source_id'])
-        if source:
-            voltage = source.get('output_voltage', 0)
-            power = node.get('input_power', 0) if node['type'] == 'power_source' else node.get('power_consumption', 0)
-            current_mA = power / voltage if voltage > 0 else 0
-            # 【已修改】邊線顯示 uA
-            edge_label = f"{voltage:.2f} V\n{current_mA * 1000.0:.1f} uA"
-            dot.edge(node['input_source_id'], node['id'], label=edge_label, tailport='e', headport='w')
+    const btn = document.querySelector('.chat-footer button');
+    btn.disabled = true;
+    
+    try {
+        const messages = [{ role: 'system', content: systemPrompt }, ...chatHistory];
+        const reply = await window.callLLM(messages);
+        
+        window.appendMessage('ai', reply);
+        chatHistory.push({ role: 'model', content: reply }); 
+    } catch (e) {
+        window.appendMessage('sys', "Error: " + e.message);
+    } finally {
+        btn.disabled = false;
+    }
+}
 
-graph_placeholder.graphviz_chart(dot)
+window.callLLM = async function(messages) {
+    const provider = document.getElementById('aiProvider').value;
+    const model = document.getElementById('aiModel').value;
+    
+    let url, headers, payload;
+
+    if(provider === 'studio') {
+        const key = document.getElementById('aiApiKey').value;
+        if (!key) throw new Error("Missing API Key");
+        url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        headers = { 'Content-Type': 'application/json' };
+    } else {
+        const pid = document.getElementById('gcpProjectId').value;
+        const token = document.getElementById('gcpToken').value;
+        if (!pid || !token) throw new Error("Missing Project ID or Token");
+        url = `https://us-central1-aiplatform.googleapis.com/v1/projects/${pid}/locations/us-central1/publishers/google/models/${model}:generateContent`;
+        headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+    }
+
+    const contents = messages.filter(m => m.role === 'user' || m.role === 'model').map(m => ({ role: m.role, parts: [{ text: m.content }] }));
+    const sysMsg = messages.find(m => m.role === 'system');
+    
+    payload = { contents: contents };
+    if (sysMsg) payload.systemInstruction = { parts: [{ text: sysMsg.content }] };
+
+    const response = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(payload) });
+    
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`API Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    if (data.error) throw new Error(data.error.message);
+    if (!data.candidates || data.candidates.length === 0) return "(No response)";
+    return data.candidates[0].content.parts[0].text;
+}
+
+window.testAIConnection = async function() {
+    const btn = document.getElementById('btnTestAI');
+    const resDiv = document.getElementById('aiTestResult');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    resDiv.innerHTML = "";
+    
+    try {
+        const reply = await window.callLLM([{ role: 'user', content: 'Hello' }]);
+        resDiv.innerHTML = `<span class="text-success fw-bold"><i class="bi bi-check-circle"></i> ${reply}</span>`;
+    } catch (e) {
+        resDiv.innerHTML = `<span class="text-danger fw-bold"><i class="bi bi-x-circle"></i> ${e.message}</span>`;
+    } finally {
+        btn.disabled = false; btn.innerHTML = 'Test Connection';
+    }
+}
+
+// --- SYSTEM & CRUD ACTIONS ---
+// [v8.2] Action for direction toggle
+window.toggleTreeDirection = function() {
+    currentTreeDir = (currentTreeDir === 'TD') ? 'LR' : 'TD';
+    const btn = document.getElementById('btnTreeDir');
+    if(currentTreeDir === 'TD') {
+        btn.innerHTML = '<i class="bi bi-arrow-down-up"></i> Dir: TD';
+    } else {
+        btn.innerHTML = '<i class="bi bi-arrow-left-right"></i> Dir: LR';
+    }
+    window.refreshUI(); // Trigger re-render
+}
+
+window.switchUseCase = function(id) { STATE.currentUseCaseId = id; document.querySelectorAll('.use-case-select').forEach(s => s.value = id); window.refreshUI(); }
+window.switchTab = function(tabId, navElement) { 
+    document.querySelectorAll('.tab-content-area').forEach(el => el.classList.remove('active'));
+    document.getElementById(tabId).classList.add('active');
+    document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+    navElement.classList.add('active');
+    if(tabId === 'tab1') window.refreshUI(); 
+    if(tabId === 'tab6') window.calcDOUMatrix();
+    if(tabId === 'tab7') window.renderDouChart();
+}
+window.exportConfig = function(){ const a=document.createElement('a'); a.href="data:text/json;charset=utf-8,"+encodeURIComponent(JSON.stringify(STATE)); a.download="config.json"; a.click(); }
+window.importConfig = function(){ const f=document.getElementById('importFile').files[0]; if(f){ const r=new FileReader(); r.onload=e=>{STATE=JSON.parse(e.target.result);window.init();alert("Imported!");}; r.readAsText(f); } }
+window.resetToFactory = function() { if(!confirm("Reset?")) return; STATE = JSON.parse(JSON.stringify(DEFAULT_DATA)); window.init(); }
+window.zoomTree = function(delta) { currentZoom += delta; if(currentZoom < 0.2) currentZoom = 0.2; document.getElementById('powerTreeDiagram').style.transform = `scale(${currentZoom})`; }
+window.resetZoomTree = function() { currentZoom = 1.0; document.getElementById('powerTreeDiagram').style.transform = `scale(1)`; }
+window.toggleTreeVisibility = function() { const vp = document.getElementById('treeViewport'); const btn = document.getElementById('btnToggleTree'); if (vp.classList.contains('tree-collapsed')) { vp.classList.remove('tree-collapsed'); btn.innerHTML = '<i class="bi bi-arrows-collapse"></i> Hide Diagram'; } else { vp.classList.add('tree-collapsed'); btn.innerHTML = '<i class="bi bi-arrows-expand"></i> Show Diagram'; } }
+
+// [v8.1] Rename Component Feature
+window.renameComponent = function(oldName) {
+    const newName = prompt("Rename Component:", oldName);
+    if (!newName || newName === oldName) return;
+    if (STATE.components.find(c => c.name === newName)) {
+        alert("Name already exists!");
+        return;
+    }
+
+    // 1. Update Component Definition
+    const comp = STATE.components.find(c => c.name === oldName);
+    comp.name = newName;
+
+    // 2. Update Connections
+    STATE.connections.forEach(conn => {
+        if (conn.comp === oldName) conn.comp = newName;
+    });
+
+    // 3. Update Use Cases
+    Object.values(STATE.useCases).forEach(uc => {
+        if (uc.components[oldName]) {
+            uc.components[newName] = uc.components[oldName];
+            delete uc.components[oldName];
+        }
+    });
+
+    // 4. Update UI
+    window.renderComponentEditor();
+    window.renderConnectionEditor();
+    window.refreshUI();
+}
+
+window.addNewProfile = function() {
+    const n = prompt("Profile Name:"); if (!n) return;
+    let w = {}; Object.keys(STATE.useCases).forEach(uc => w[uc] = 0);
+    STATE.profiles.push({ name: n, targetDays: 5, weights: w });
+    window.calcDOUMatrix();
+}
+window.renameProfile = function(idx) { const n = prompt("Name:", STATE.profiles[idx].name); if (n) { STATE.profiles[idx].name = n; window.calcDOUMatrix(); } }
+window.deleteProfile = function(idx) { if (STATE.profiles.length <= 1) return; if (!confirm("Delete?")) return; STATE.profiles.splice(idx, 1); window.calcDOUMatrix(); }
+window.updateProfileTarget = function(idx, v) { STATE.profiles[idx].targetDays = parseFloat(v); window.calcDOUMatrix(); }
+window.updateProfileWeight = function(idx, uc, v) { STATE.profiles[idx].weights[uc] = parseFloat(v); window.calcDOUMatrix(); }
+window.updateProjectName = function(val) { STATE.projectName = val; }
+
+window.calcDOUMatrix = function() {
+    const batCap = parseFloat(document.getElementById("batCapacity").value);
+    const thead = document.getElementById("matrixThead");
+    const tbody = document.getElementById("matrixTbody");
+    const tfoot = document.getElementById("matrixTfoot");
+    const chartSelect = document.getElementById("douChartProfileSelect");
+
+    let hRow1 = `<tr><th class="sticky-col bg-light" style="width:250px;">Use Case / Spec</th><th style="width:100px;">Avg (uA)</th>`;
+    let hRow2 = `<tr><td class="sticky-col bg-light text-end fw-bold">Target (Days) <i class="bi bi-arrow-right"></i></td><td class="bg-light"></td>`;
+    chartSelect.innerHTML = "";
+    
+    STATE.profiles.forEach((p, idx) => {
+        hRow1 += `<th class="profile-col profile-header"><span class="clickable-node text-primary" onclick="window.renameProfile(${idx})">${p.name}</span><i class="bi bi-trash text-danger ms-2 clickable-node small" onclick="window.deleteProfile(${idx})"></i></th>`;
+        hRow2 += `<td class="profile-col"><input type="number" step="0.1" class="form-control form-control-sm text-center fw-bold text-primary border-0" value="${p.targetDays != null ? p.targetDays : ''}" onchange="window.updateProfileTarget(${idx}, this.value)"></td>`;
+        chartSelect.innerHTML += `<option value="${idx}">${p.name}</option>`;
+    });
+    hRow1 += `</tr>`; hRow2 += `</tr>`;
+    thead.innerHTML = hRow1 + hRow2;
+
+    const ucCurrents = {};
+    Object.keys(STATE.useCases).forEach(uc => {
+        ucCurrents[uc] = window.PowerEngine.calculate(STATE, uc).report["VSYS"].loadCurrent;
+    });
+
+    let bodyHtml = "";
+    Object.keys(STATE.useCases).forEach(uc => {
+        const i_uA = ucCurrents[uc];
+        bodyHtml += `<tr><td class="sticky-col bg-light text-start small">${uc}</td><td class="bg-light small">${i_uA.toFixed(1)}</td>`;
+        STATE.profiles.forEach((p, idx) => {
+            const val = p.weights[uc];
+            bodyHtml += `<td class="profile-col"><input type="number" class="profile-input" value="${val != null ? val : ''}" onchange="window.updateProfileWeight(${idx}, '${uc}', this.value)"></td>`;
+        });
+        bodyHtml += `</tr>`;
+    });
+    tbody.innerHTML = bodyHtml;
+
+    let fRow1 = `<tr><td class="sticky-col bg-light text-end fw-bold">Total Duration (s)</td><td class="bg-light">-</td>`;
+    let fRow2 = `<tr><td class="sticky-col bg-light text-end fw-bold">Total Energy (uAh)</td><td class="bg-light">-</td>`;
+    let fRow3 = `<tr><td class="sticky-col bg-light text-end fw-bold fs-5">Est. Days</td><td class="bg-light">-</td>`;
+
+    STATE.profiles.forEach((p, idx) => {
+        let totalSec = 0, total_uAh = 0;
+        Object.keys(STATE.useCases).forEach(uc => {
+            const sec = p.weights[uc] || 0;
+            if (sec > 0) {
+                totalSec += sec;
+                total_uAh += ucCurrents[uc] * (sec / 3600.0);
+            }
+        });
+        const bat_uAh = batCap * 1000.0;
+        const estDays = total_uAh > 0 ? (bat_uAh / total_uAh) : 0;
+        const passClass = estDays >= p.targetDays ? "result-pass" : "result-fail";
+
+        fRow1 += `<td class="profile-col text-muted small">${totalSec.toFixed(0)} s</td>`;
+        fRow2 += `<td class="profile-col fw-bold">${total_uAh.toFixed(0)}</td>`;
+        fRow3 += `<td class="profile-col ${passClass} fs-5">${estDays.toFixed(2)} d</td>`;
+    });
+    fRow1 += `</tr>`; fRow2 += `</tr>`; fRow3 += `</tr>`;
+    tfoot.innerHTML = fRow1 + fRow2 + fRow3;
+
+    window.renderDouChart();
+}
+
+window.calculateDailyEnergyBreakdown = function(profile) {
+    let breakdown = {}; 
+    STATE.components.forEach(c => {
+        if (c.enabled !== false) breakdown[c.name] = 0; 
+    });
+    STATE.sources.forEach(s => { if(s.type !== 'BATTERY') breakdown[s.name + " (Loss+Iq)"] = 0; });
+
+    Object.keys(STATE.useCases).forEach(ucName => {
+        const duration = profile.weights[ucName] || 0;
+        if (duration <= 0) return;
+        const hours = duration / 3600.0;
+        const res = window.PowerEngine.calculate(STATE, ucName);
+        const report = res.report;
+        
+        STATE.connections.forEach(conn => {
+            const comp = STATE.components.find(c => c.name === conn.comp);
+            if (!comp || comp.enabled === false) return; 
+
+            const weights = STATE.useCases[ucName].components[conn.comp];
+            if(weights) {
+                let avgI = 0; 
+                Object.keys(weights).forEach(m => {
+                    if(comp.modes[m]) avgI += (comp.modes[m][conn.node]||0) * ((weights[m]||0)/100.0);
+                });
+                const v = report[conn.rail] ? report[conn.rail].finalVout : 0;
+                breakdown[conn.comp] += (v * avgI * hours); 
+            }
+        });
+
+        STATE.sources.forEach(s => {
+            if (s.type === 'BATTERY') return;
+            const r = report[s.name];
+            const pOut = r.finalVout * r.loadCurrent;
+            const def = STATE.sources.find(x => x.name === s.name);
+            const vIn = (report[def.input]) ? report[def.input].finalVout : 0;
+            const pIn = vIn * r.inputCurrent;
+            breakdown[s.name + " (Loss+Iq)"] += Math.max(0, pIn - pOut) * hours;
+        });
+    });
+    return breakdown;
+}
+
+window.renderDouChart = function() {
+    const ctx = document.getElementById('douPieChart'); if (!ctx) return;
+    const profileIdx = document.getElementById("douChartProfileSelect").value || 0;
+    const profile = STATE.profiles[profileIdx];
+    if(!profile) return;
+    
+    const bd = window.calculateDailyEnergyBreakdown(profile);
+    const sortedKeys = Object.keys(bd).sort((a,b) => bd[b] - bd[a]).filter(k=>bd[k]>1);
+    const totalEnergy = Object.values(bd).reduce((a,b) => a+b, 0);
+
+    const tbody = document.getElementById('douBreakdownBody');
+    tbody.innerHTML = sortedKeys.map(k => {
+        const val = bd[k];
+        const pct = totalEnergy > 0 ? (val / totalEnergy * 100).toFixed(1) : "0.0";
+        return `<tr><td class="text-start">${k}</td><td>${val.toFixed(0)}</td><td>${pct}%</td></tr>`;
+    }).join("");
+
+    if(douChart) douChart.destroy();
+    if(typeof Chart !== 'undefined') {
+        douChart = new Chart(ctx.getContext('2d'), { 
+            type: 'doughnut', 
+            data: { 
+                labels: sortedKeys, 
+                datasets: [{ 
+                    data: sortedKeys.map(k => bd[k]), 
+                    backgroundColor: ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b', '#858796', '#5a5c69', '#f8f9fc'] 
+                }] 
+            }, 
+            options: { 
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { 
+                    legend: { position: 'right' }, 
+                    datalabels: {
+                        formatter: (value, ctx) => {
+                            let sum = 0;
+                            let dataArr = ctx.chart.data.datasets[0].data;
+                            dataArr.map(data => { sum += data; });
+                            let percentage = (value*100 / sum).toFixed(1)+"%";
+                            return percentage;
+                        },
+                        color: '#fff',
+                        font: { weight: 'bold' }
+                    }
+                }
+            },
+            plugins: [ChartDataLabels]
+        });
+    }
+}
+
+// CRUD
+window.addNewSourceMode = function(n){const m=prompt("Mode:");if(!m)return;const s=STATE.sources.find(x=>x.name===n);if(s.modes[m])return;s.modes[m]={vOut:0,iq:0.001,eff:85};window.refreshUI();window.renderSourceEditor();}
+window.deleteSourceMode = function(n,m){if(m==="ON"||m==="OFF")return;if(!confirm("Del?"))return;delete STATE.sources.find(x=>x.name===n).modes[m];window.refreshUI();window.renderSourceEditor();}
+window.updateSourceMode = function(n,m,f,v){const s=STATE.sources.find(x=>x.name===n);if(s&&s.modes[m]){s.modes[m][f]=parseFloat(v);window.refreshUI();}}
+window.updateSourceGlobal = function(n,f,v){const s=STATE.sources.find(x=>x.name===n);if(s){s[f]=v;window.refreshUI();window.renderSourceEditor();}}
+window.renameSource = function(o){if(o==="VSYS"){alert("No");return;}const n=prompt("Rename:",o);if(!n||n===o)return;if(STATE.sources.find(s=>s.name===n)){alert("Exists");return;}const s=STATE.sources.find(s=>s.name===o);s.name=n;STATE.sources.forEach(x=>{if(x.input===o)x.input=n});STATE.connections.forEach(x=>{if(x.rail===o)x.rail=n});Object.keys(STATE.useCases).forEach(k=>{const u=STATE.useCases[k];if(u.sources&&u.sources[o]){u.sources[n]=u.sources[o];delete u.sources[o]}});window.refreshUI();window.renderSourceEditor();window.renderConnectionEditor();}
+window.addNewSource = function(){const n=prompt("Name:");if(!n)return;if(STATE.sources.find(s=>s.name===n)){alert("Exists");return;}STATE.sources.push({name:n,type:"LDO",input:"VSYS",modes:{"ON":{vOut:1.8,iq:0.01,eff:null},"OFF":{vOut:0,iq:0,eff:null}}});Object.keys(STATE.useCases).forEach(u=>{if(!STATE.useCases[u].sources)STATE.useCases[u].sources={};STATE.useCases[u].sources[n]="ON"});window.refreshUI();window.renderSourceEditor();window.renderConnectionEditor();}
+window.deleteSource = function(n){if(n==="VSYS"){alert("No");return;}if(STATE.sources.find(s=>s.input===n)){alert("Dependents exist");return;}if(!confirm("Del?"))return;STATE.sources=STATE.sources.filter(s=>s.name!==n);STATE.connections.forEach(c=>{if(c.rail===n)c.rail="VSYS"});Object.keys(STATE.useCases).forEach(u=>{if(STATE.useCases[u].sources)delete STATE.useCases[u].sources[n]});window.refreshUI();window.renderSourceEditor();window.renderConnectionEditor();}
+window.openDutyCycleEditor = function(compName) { currentEditingComp = compName; const uc = STATE.useCases[STATE.currentUseCaseId]; const comp = STATE.components.find(c => c.name === compName); const weights = uc.components[compName] || {}; document.getElementById("modalCompName").innerText = compName; const container = document.getElementById("modalInputsContainer"); container.innerHTML = ""; Object.keys(comp.modes).forEach(mode => { const val = weights[mode] !== undefined ? weights[mode] : 0; container.innerHTML += `<div class="row mb-2 align-items-center"><div class="col-4 text-end fw-bold">${mode}</div><div class="col-6"><input type="number" class="form-control duty-input" data-mode="${mode}" value="${val}" min="0" max="100" oninput="window.updateModalTotal()"></div><div class="col-2 text-muted">%</div></div>`; }); window.updateModalTotal(); dutyModal = new bootstrap.Modal(document.getElementById('dutyCycleModal')); dutyModal.show(); }
+window.updateModalTotal = function() { let sum = 0; document.querySelectorAll('.duty-input').forEach(inp => sum += parseFloat(inp.value) || 0); const totalEl = document.getElementById("modalTotalSum"); totalEl.innerText = sum; const warn = document.getElementById("modalWarning"); if (Math.abs(sum - 100) > 0.1) { totalEl.classList.remove("text-success"); totalEl.classList.add("text-danger"); warn.classList.remove("d-none"); } else { totalEl.classList.remove("text-danger"); totalEl.classList.add("text-success"); warn.classList.add("d-none"); } }
+window.saveDutyCycle = function() { const inputs = document.querySelectorAll('.duty-input'); let sum = 0; inputs.forEach(inp => sum += parseFloat(inp.value) || 0); if (Math.abs(sum - 100) > 0.1) { if(!confirm("Total is not 100%. Save anyway?")) return; } const newWeights = {}; inputs.forEach(inp => newWeights[inp.getAttribute('data-mode')] = parseFloat(inp.value) || 0); STATE.useCases[STATE.currentUseCaseId].components[currentEditingComp] = newWeights; dutyModal.hide(); window.refreshUI(); }
+window.renameComponentMode = function(c,o) { const n=prompt("Rename:",o);if(!n||n===o)return;const comp=STATE.components.find(x=>x.name===c);if(comp.modes[n])return;comp.modes[n]=comp.modes[o];delete comp.modes[o]; if(comp.modeNotes && comp.modeNotes[o]) { comp.modeNotes[n]=comp.modeNotes[o]; delete comp.modeNotes[o]; } Object.keys(STATE.useCases).forEach(u=>{if(STATE.useCases[u].components[c]&&STATE.useCases[u].components[c][o]!==undefined){STATE.useCases[u].components[c][n]=STATE.useCases[u].components[c][o];delete STATE.useCases[u].components[c][o];}});window.refreshUI();window.renderComponentEditor(); }
+window.addComponentMode = function(c) { const n=prompt("Name:");if(!n)return;const comp=STATE.components.find(x=>x.name===c);if(comp.modes[n])return;const first=Object.keys(comp.modes)[0];const d={};if(first)Object.keys(comp.modes[first]).forEach(k=>d[k]=0);comp.modes[n]=d;Object.keys(STATE.useCases).forEach(u=>{if(STATE.useCases[u].components[c])STATE.useCases[u].components[c][n]=0;});window.refreshUI();window.renderComponentEditor(); }
+window.deleteComponentMode = function(c,m) { if(!confirm("Del?"))return;const comp=STATE.components.find(x=>x.name===c);if(Object.keys(comp.modes).length<=1)return;delete comp.modes[m];if(comp.modeNotes) delete comp.modeNotes[m]; Object.keys(STATE.useCases).forEach(u=>{if(STATE.useCases[u].components[c])delete STATE.useCases[u].components[c][m];});window.refreshUI();window.renderComponentEditor();window.renderConnectionEditor(); }
+window.renameOrDeleteNode = function(c,o){const n=prompt("Edit:",o);if(n===null)return;const t=n.trim();if(t===""){if(!confirm("Del?"))return;const comp=STATE.components.find(x=>x.name===c);if(comp)Object.keys(comp.modes).forEach(m=>delete comp.modes[m][o]);STATE.connections=STATE.connections.filter(x=>!(x.comp===c&&x.node===o));}else if(t!==o){const comp=STATE.components.find(x=>x.name===c);Object.keys(comp.modes).forEach(m=>{if(comp.modes[m][o]!==undefined){comp.modes[m][t]=comp.modes[m][o];delete comp.modes[m][o]}});STATE.connections.forEach(x=>{if(x.comp===c&&x.node===o)x.node=t});}window.refreshUI();window.renderComponentEditor();window.renderConnectionEditor(); }
+window.deleteComponent = function(n){if(!confirm("Del?"))return;STATE.components=STATE.components.filter(x=>x.name!==n);STATE.connections=STATE.connections.filter(x=>x.comp!==n);Object.keys(STATE.useCases).forEach(u=>{delete STATE.useCases[u].components[n]});window.refreshUI();window.renderComponentEditor();window.renderConnectionEditor();}
+window.addNodeToComponent = function(c,m){const n=prompt("Node:");if(!n)return;const comp=STATE.components.find(x=>x.name===c);if(comp){Object.keys(comp.modes).forEach(x=>{if(comp.modes[x][n]===undefined)comp.modes[x][n]=0});if(!STATE.connections.find(x=>x.comp===c&&x.node===n))STATE.connections.push({comp:c,node:n,rail:"VSYS"});window.refreshUI();window.renderComponentEditor();window.renderConnectionEditor();}}
+window.updateCompMode = function(c,m,n,v){ STATE.components.find(x=>x.name===c).modes[m][n]=parseFloat(v); window.refreshUI(); }
+window.addNewComponent = function() { const n = prompt("Name:"); if(!n) return; if(STATE.components.find(x=>x.name===n)){alert("Exists");return;} const newComp = {name:n, enabled:true, modes:{"Active":{VDD:1},"Sleep":{VDD:0.01},"Off":{VDD:0}}, note: ""}; STATE.components.push(newComp); Object.keys(STATE.useCases).forEach(ucId => { STATE.useCases[ucId].components[n] = { "Active": 0, "Sleep": 0, "Off": 0 }; }); const r = STATE.sources.length>0 ? STATE.sources[0].name : "VSYS"; STATE.connections.push({comp:n, node:"VDD", rail:r}); window.refreshUI(); window.renderComponentEditor(); window.renderConnectionEditor(); }
+window.toggleComponent = function(name) { const c = STATE.components.find(x => x.name === name); if(c) c.enabled = !c.enabled; window.refreshUI(); window.renderComponentEditor(); }
+
+window.updateComponentNote = function(cName, val) { STATE.components.find(c => c.name === cName).note = val; }
+window.updateCompModeNote = function(cName, mode, node, val) { 
+    const comp = STATE.components.find(c => c.name === cName);
+    if(!comp.modeNotes) comp.modeNotes = {};
+    if(!comp.modeNotes[mode]) comp.modeNotes[mode] = {};
+    comp.modeNotes[mode][node] = val;
+}
+window.updateTab3Note = function(val) { STATE.tab3Note = val; }
+window.updateTab4Note = function(val) { STATE.tab4Note = val; }
+
+window.init = function() { 
+    try { 
+        window.sanitizeDataStructure();
+        window.renderUseCaseSelect(); 
+        window.renderComponentEditor(); 
+        window.renderSourceEditor(); 
+        window.renderConnectionEditor(); 
+        window.calcDOUMatrix(); 
+        window.loadAISettings(); 
+        setTimeout(() => window.refreshUI(), 100);
+    } catch(e) { 
+        console.error(e); 
+        document.getElementById("globalError").classList.remove("d-none");
+        document.getElementById("globalErrorMsg").innerText = "Init Error: " + e.message;
+    } 
+}
+
+window.refreshUI = function() {
+    try {
+        const res = window.PowerEngine.calculate(STATE);
+        const compRes = window.PowerEngine.calculateComponentBreakdown(STATE);
+        window.renderTab5_Controls(res);
+        window.renderAnalysisTables(res, compRes); 
+        window.safeRenderPowerPie(compRes); 
+        window.renderMermaidTree(res); 
+        if(res.report && res.report["VSYS"]) {
+            document.getElementById("tab1TotalCurrent").innerText = res.report["VSYS"].loadCurrent.toFixed(1);
+        }
+        if(document.getElementById("tab6").classList.contains("active")) window.calcDOUMatrix();
+    } catch(e) { console.error(e); }
+}
+
+window.onload = window.init;
+</script>
+</body>
+</html>
